@@ -115,6 +115,19 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _droneStatus = MutableStateFlow("Preparing order")
     val droneStatus: StateFlow<String> = _droneStatus.asStateFlow()
 
+    private val _droneGps = MutableStateFlow<GpsCoordinates>(
+        GpsCoordinates(
+            latitude = DroneGpsService.HANGAR_LAT,
+            longitude = DroneGpsService.HANGAR_LNG,
+            altitudeMeters = 0.0,
+            speedKmh = 0.0,
+            satellitesCount = 8,
+            signalStrengthPercentage = 90,
+            signalStatus = "CALIBRATING_SENSORS"
+        )
+    )
+    val droneGps: StateFlow<GpsCoordinates> = _droneGps.asStateFlow()
+
     private val _deliverySecondsRemaining = MutableStateFlow(150) // Speeded up countdown for demo (starts at 150s)
     val deliverySecondsRemaining: StateFlow<Int> = _deliverySecondsRemaining.asStateFlow()
 
@@ -451,6 +464,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _droneStatus.value = "Preparing order"
         _deliverySecondsRemaining.value = 150
 
+        val currentOrder = _activeTrackedOrder.value
+        val orderId = currentOrder?.id ?: 9999
+
+        _droneGps.value = DroneGpsService.trackDroneGps(0.0f, "Preparing order", orderId)
+
         trackingJob = viewModelScope.launch {
             // Speeded up delivery for demo: increments progress to 100% over 50 seconds
             val steps = 100
@@ -491,6 +509,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
+
+                _droneGps.value = DroneGpsService.trackDroneGps(
+                    progress = _droneProgress.value,
+                    status = _droneStatus.value,
+                    orderId = orderId
+                )
             }
         }
     }

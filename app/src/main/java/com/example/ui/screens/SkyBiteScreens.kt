@@ -2696,6 +2696,7 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
     val progress by viewModel.droneProgress.collectAsState()
     val status by viewModel.droneStatus.collectAsState()
     val secondsLeft by viewModel.deliverySecondsRemaining.collectAsState()
+    val droneGps by viewModel.droneGps.collectAsState()
 
     val bgBrush = if (isDarkMode) {
         Brush.radialGradient(colors = listOf(Color(0xFF0F1626), SkyDarkBackground))
@@ -2742,9 +2743,10 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                             .padding(12.dp)
                             .align(Alignment.TopStart)
                     ) {
-                        Text("DRONE FREQUENCY: ACTIVE", color = Color(0xFF00D4AA), style = MaterialTheme.typography.labelSmall)
-                        Text("EST SPEED: 72 KM/H", color = Color.White, style = MaterialTheme.typography.labelSmall)
-                        Text("ALTITUDE: 120M", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("DRONE FREQUENCY: ACTIVE", color = Color(0xFF00D4AA), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text("EST SPEED: ${String.format("%.1f", droneGps.speedKmh)} KM/H", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("ALTITUDE: ${String.format("%.1f", droneGps.altitudeMeters)}M", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("STATUS: ${droneGps.signalStatus}", color = Color(0x90FFFFFF), style = MaterialTheme.typography.labelSmall, fontSize = 8.sp)
                     }
 
                     Column(
@@ -2753,8 +2755,34 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                             .align(Alignment.TopEnd),
                         horizontalAlignment = Alignment.End
                     ) {
-                        Text("GPS: LOCKED", color = Color(0xFF00D4AA), style = MaterialTheme.typography.labelSmall)
-                        Text("BEAM ANGLE: 42°", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("GPS: LOCKED (${droneGps.satellitesCount} SATS)", color = Color(0xFF00D4AA), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        Text("LAT: ${String.format("%.6f", droneGps.latitude)}° N", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("LNG: ${String.format("%.6f", droneGps.longitude)}° E", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                        Text("SIGNAL: ${droneGps.signalStrengthPercentage}% QUALITY", color = Color(0x90FFFFFF), style = MaterialTheme.typography.labelSmall, fontSize = 8.sp)
+                    }
+
+                    // Monospace floating lat/lng HUD footer
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.5f))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "LIVE LAT: ${String.format("%.6f", droneGps.latitude)}",
+                            color = Color(0xFF00D4AA),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                        Text(
+                            text = "LIVE LNG: ${String.format("%.6f", droneGps.longitude)}",
+                            color = Color(0xFF00D4AA),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
                     }
                 }
             }
@@ -2807,7 +2835,7 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
                         Column(horizontalAlignment = Alignment.End) {
                             Text("SIGNAL INTEGRITY", style = MaterialTheme.typography.labelSmall, color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary)
-                            Text("100% QUANTUM", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF00D4AA))
+                            Text("${droneGps.signalStrengthPercentage}% ${droneGps.signalStatus.take(5)}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color(0xFF00D4AA))
                         }
                     }
                 }
@@ -2831,6 +2859,38 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     TimelineItem("In Transit", "Cruising at Mach 0.05 altitude", progress >= 0.40f, isDarkMode)
                     TimelineItem("Arriving", "Descending into terminal coordinates", progress >= 0.75f, isDarkMode)
                     TimelineItem("Delivered", "Thermal payload soft drop complete", progress >= 1.00f, isDarkMode)
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = (if (isDarkMode) Color.White else Color.Black).copy(alpha = 0.12f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "GPS RECEIVER DATA PACKET",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background((if (isDarkMode) Color.Black else Color(0xFFF5F5F5)).copy(alpha = 0.6f))
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text("DRONE ID: SB-904", style = MaterialTheme.typography.labelSmall, color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary)
+                            Text("LATITUDE: ${String.format("%.6f", droneGps.latitude)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary)
+                            Text("LONGITUDE: ${String.format("%.6f", droneGps.longitude)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text("STATUS: ${droneGps.signalStatus}", style = MaterialTheme.typography.labelSmall, color = Color(0xFF00D4AA), fontWeight = FontWeight.Bold)
+                            Text("ALTITUDE: ${String.format("%.1f", droneGps.altitudeMeters)} meters", style = MaterialTheme.typography.bodySmall, color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary)
+                            Text("SPEED: ${String.format("%.1f", droneGps.speedKmh)} km/h", style = MaterialTheme.typography.bodySmall, color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary)
+                        }
+                    }
                 }
             }
 

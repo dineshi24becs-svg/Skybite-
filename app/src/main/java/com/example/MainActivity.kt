@@ -53,11 +53,12 @@ class MainActivity : ComponentActivity() {
         }
         deliveryReceiver = receiver
         val filter = IntentFilter("com.example.skybite.ORDER_DELIVERED")
-        if (android.os.Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receiver, filter, RECEIVER_EXPORTED)
-        } else {
-            registerReceiver(receiver, filter)
-        }
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            receiver,
+            filter,
+            androidx.core.content.ContextCompat.RECEIVER_EXPORTED
+        )
 
         enableEdgeToEdge()
         setContent {

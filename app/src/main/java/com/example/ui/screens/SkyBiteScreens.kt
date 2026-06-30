@@ -14,7 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.Launch
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -1715,7 +1718,7 @@ fun AIRecommendedCard(
                         color = if (isDarkMode) SkyDarkOrange else SkyLightOrange
                     )
                     Icon(
-                        Icons.Default.ArrowForward,
+                        Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = null,
                         tint = if (isDarkMode) SkyDarkAccent else SkyLightAccent,
                         modifier = Modifier.size(16.dp)
@@ -2324,7 +2327,7 @@ fun CartScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                             text = "PROCEED TO FLIGHT LAUNCH",
                             onClick = { viewModel.navigateTo(Screen.CHECKOUT) },
                             modifier = Modifier.fillMaxWidth(),
-                            icon = Icons.Default.Launch,
+                            icon = Icons.AutoMirrored.Filled.Launch,
                             testTag = "proceed_checkout_btn"
                         )
                         Spacer(modifier = Modifier.height(24.dp))
@@ -2629,7 +2632,7 @@ fun CheckoutScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 text = "CONFIRM SPACE DISPATCH",
                 onClick = { viewModel.placeOrder(address, city, pincode, phone, selectedPayment) },
                 modifier = Modifier.fillMaxWidth(),
-                icon = Icons.Default.Launch,
+                icon = Icons.AutoMirrored.Filled.Launch,
                 testTag = "place_order_btn"
             )
             Spacer(modifier = Modifier.height(24.dp))
@@ -2806,16 +2809,8 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Progress Bar
-                    LinearProgressIndicator(
-                        progress = progress,
-                        color = Color(0xFF00D4AA),
-                        trackColor = Color.Gray.copy(alpha = 0.3f),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                    )
+                    // Stepped Status Progression Bar
+                    RealtimeStatusProgressionBar(progress = progress, isDarkMode = isDarkMode)
 
                     Spacer(modifier = Modifier.height(16.dp))
 
@@ -3025,6 +3020,210 @@ fun TelemetryCanvasMap(progress: Float) {
             radius = 22f,
             center = dronePos,
             style = Stroke(width = 3f)
+        )
+    }
+}
+
+@Composable
+fun RealtimeStatusProgressionBar(
+    progress: Float,
+    isDarkMode: Boolean
+) {
+    val activeColor = Color(0xFF00D4AA)
+    val pendingColor = if (isDarkMode) Color(0xFF334155) else Color(0xFFE2E8F0)
+    val subtextColor = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+
+    val preparingCompleted = progress >= 0.15f
+    val preparingActive = progress in 0.0f..0.15f
+
+    val transitCompleted = progress >= 1.0f
+    val transitActive = progress in 0.15f..1.0f
+
+    val deliveredCompleted = progress >= 1.0f
+    val deliveredActive = progress >= 1.0f
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+            contentAlignment = Alignment.CenterStart
+        ) {
+            // Track background line
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(pendingColor)
+            )
+
+            // Dynamic progress fill line
+            val fillFraction = when {
+                progress < 0.15f -> {
+                    0.05f + (progress / 0.15f) * 0.40f
+                }
+                progress < 1.0f -> {
+                    0.45f + ((progress - 0.15f) / 0.85f) * 0.50f
+                }
+                else -> 1.0f
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fillFraction)
+                    .padding(horizontal = 36.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp))
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(activeColor, Color(0xFF00BFFF))
+                        )
+                    )
+            )
+
+            // Milestone nodes
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Milestone 1: Preparing
+                MilestoneNode(
+                    completed = preparingCompleted,
+                    active = preparingActive,
+                    icon = Icons.Default.Restaurant,
+                    isDarkMode = isDarkMode
+                )
+
+                // Milestone 2: In Transit
+                MilestoneNode(
+                    completed = transitCompleted,
+                    active = transitActive,
+                    icon = Icons.Default.FlightTakeoff,
+                    isDarkMode = isDarkMode
+                )
+
+                // Milestone 3: Delivered
+                MilestoneNode(
+                    completed = deliveredCompleted,
+                    active = deliveredActive,
+                    icon = Icons.Default.CheckCircle,
+                    isDarkMode = isDarkMode
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Node labels
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Label 1: Preparing
+            Column(
+                modifier = Modifier.width(100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Preparing",
+                    fontWeight = if (preparingActive) FontWeight.Black else FontWeight.Bold,
+                    color = if (preparingActive || preparingCompleted) activeColor else subtextColor,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    text = if (preparingCompleted) "Ready" else if (preparingActive) "Cooking..." else "Pending",
+                    color = subtextColor,
+                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            // Label 2: In Transit
+            Column(
+                modifier = Modifier.width(100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "In Transit",
+                    fontWeight = if (transitActive) FontWeight.Black else FontWeight.Bold,
+                    color = if (transitActive || transitCompleted) activeColor else subtextColor,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    text = if (transitCompleted) "Arrived" else if (transitActive) "Flying" else "Pending",
+                    color = subtextColor,
+                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+
+            // Label 3: Delivered
+            Column(
+                modifier = Modifier.width(100.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Delivered",
+                    fontWeight = if (deliveredActive) FontWeight.Black else FontWeight.Bold,
+                    color = if (deliveredActive) activeColor else subtextColor,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                Text(
+                    text = if (deliveredCompleted) "Payload Dropped" else "Pending",
+                    color = subtextColor,
+                    fontSize = 10.sp,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MilestoneNode(
+    completed: Boolean,
+    active: Boolean,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    isDarkMode: Boolean
+) {
+    val nodeColor = when {
+        completed -> Color(0xFF00D4AA)
+        active -> Color(0xFF00BFFF)
+        else -> if (isDarkMode) Color(0xFF1E293B) else Color(0xFFCBD5E1)
+    }
+
+    val iconColor = when {
+        completed -> Color(0xFF090E17)
+        active -> Color.White
+        else -> if (isDarkMode) Color(0xFF64748B) else Color(0xFF94A3B8)
+    }
+
+    Box(
+        modifier = Modifier
+            .size(36.dp)
+            .clip(CircleShape)
+            .background(nodeColor)
+            .border(
+                width = if (active) 2.dp else 0.dp,
+                color = if (active) Color.White else Color.Transparent,
+                shape = CircleShape
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = iconColor,
+            modifier = Modifier.size(18.dp)
         )
     }
 }
@@ -3270,7 +3469,7 @@ fun ProfileScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Icon(Icons.Default.Logout, contentDescription = null)
+                Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("DISENGAGE PILOT COUPLING")
             }

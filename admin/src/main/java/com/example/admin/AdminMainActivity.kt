@@ -59,17 +59,27 @@ data class Food(
     val category: String
 )
 
+data class AdminUser(
+    val id: Int,
+    val email: String,
+    val phone: String,
+    val name: String
+)
+
 class AdminMainActivity : ComponentActivity() {
 
     private val orderUri = Uri.parse("content://com.example.skybite.provider/order_history")
     private val foodUri = Uri.parse("content://com.example.skybite.provider/food_items")
+    private val userUri = Uri.parse("content://com.example.skybite.provider/users")
 
     private var orderObserver: ContentObserver? = null
     private var foodObserver: ContentObserver? = null
+    private var userObserver: ContentObserver? = null
 
     // State for live lists
     private val ordersState = mutableStateListOf<Order>()
     private val foodsState = mutableStateListOf<Food>()
+    private val usersState = mutableStateListOf<AdminUser>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -78,6 +88,7 @@ class AdminMainActivity : ComponentActivity() {
         // Initial loads
         refreshOrders()
         refreshFoodItems()
+        refreshUsers()
 
         // Register ContentObservers for real-time reactivity when the user places an order!
         orderObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -96,16 +107,79 @@ class AdminMainActivity : ComponentActivity() {
         }
         contentResolver.registerContentObserver(foodUri, true, foodObserver!!)
 
+        userObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+            override fun onChange(selfChange: Boolean) {
+                super.onChange(selfChange)
+                refreshUsers()
+            }
+        }
+        contentResolver.registerContentObserver(userUri, true, userObserver!!)
+
         setContent {
             AdminAppContent(
                 orders = ordersState,
                 foods = foodsState,
+                users = usersState,
                 onCompleteOrder = { order -> completeOrderAndSendBroadcast(order) },
+                onUpdateOrderStatus = { orderId, newStatus -> updateOrderStatus(orderId, newStatus) },
                 onAddFoodItem = { name, price, desc, category, imageUrl -> 
                     addFoodItem(name, price, desc, category, imageUrl)
                 },
                 onDeleteFoodItem = { foodId -> deleteFoodItem(foodId) }
             )
+        }
+    }
+
+    private fun refreshUsers() {
+        try {
+            val list = mutableListOf<AdminUser>()
+            val cursor = contentResolver.query(userUri, null, null, null, "id DESC")
+            cursor?.use { c ->
+                val idIdx = c.getColumnIndex("id")
+                val nameIdx = c.getColumnIndex("name")
+                val emailIdx = c.getColumnIndex("email")
+                val phoneIdx = c.getColumnIndex("phone")
+
+                while (c.moveToNext()) {
+                    val id = if (idIdx >= 0) c.getInt(idIdx) else 0
+                    val name = if (nameIdx >= 0) c.getString(nameIdx) ?: "" else ""
+                    val email = if (emailIdx >= 0) c.getString(emailIdx) ?: "" else ""
+                    val phone = if (phoneIdx >= 0) c.getString(phoneIdx) ?: "" else ""
+                    list.add(AdminUser(id, email, phone, name))
+                }
+            }
+            usersState.clear()
+            usersState.addAll(list)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateOrderStatus(orderId: Int, newStatus: String) {
+        try {
+            val values = ContentValues().apply {
+                put("status", newStatus)
+            }
+            val updated = contentResolver.update(
+                orderUri, 
+                values, 
+                "id = ?", 
+                arrayOf(orderId.toString())
+            )
+
+            if (updated > 0) {
+                if (newStatus == "Delivered") {
+                    val intent = Intent("com.example.skybite.ORDER_DELIVERED").apply {
+                        putExtra("order_id", orderId)
+                        addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+                    }
+                    sendBroadcast(intent)
+                }
+                Toast.makeText(this, "🛸 Drone status changed to: $newStatus", Toast.LENGTH_SHORT).show()
+                refreshOrders()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 
@@ -247,6 +321,7 @@ class AdminMainActivity : ComponentActivity() {
         super.onDestroy()
         orderObserver?.let { contentResolver.unregisterContentObserver(it) }
         foodObserver?.let { contentResolver.unregisterContentObserver(it) }
+        userObserver?.let { contentResolver.unregisterContentObserver(it) }
     }
 }
 
@@ -262,11 +337,14 @@ val SkyDarkTextSecondary = Color(0xFF9CA3AF)
 fun AdminAppContent(
     orders: List<Order>,
     foods: List<Food>,
+    users: List<AdminUser>,
     onCompleteOrder: (Order) -> Unit,
+    onUpdateOrderStatus: (Int, String) -> Unit,
     onAddFoodItem: (name: String, price: Double, desc: String, category: String, imageUrl: String) -> Unit,
     onDeleteFoodItem: (Int) -> Unit
 ) {
-    var activeTab by remember { mutableStateOf(0) } // 0 = Active Deliveries, 1 = Food Launchpad, 2 = Hangar Telemetry
+    var activeRole by remember { mutableStateOf(0) } // 0 = ADMIN COMMAND, 1 = DELIVERY AGENT
+    var activeTab by remember { mutableStateOf(0) }
 
     Box(
         modifier = Modifier
@@ -305,7 +383,7 @@ fun AdminAppContent(
                                 fontWeight = FontWeight.Black,
                                 letterSpacing = 2.sp,
                                 color = SkyDarkTextPrimary
-                            )
+                             )
                         }
                         Text(
                             "QUANTUM CONTROL COMMAND",
@@ -343,51 +421,154 @@ fun AdminAppContent(
                 }
             }
 
-            // Tab switchers
-            TabRow(
-                selectedTabIndex = activeTab,
-                containerColor = SkyDarkSurface,
-                contentColor = SkyDarkAccent
+            // Dual Role Selector
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(SkyDarkSurface)
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Tab(
-                    selected = activeTab == 0,
-                    onClick = { activeTab = 0 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FlightTakeoff, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("DRONE CONTROL (${orders.count { it.status != "Delivered" }})")
-                        }
-                    },
-                    selectedContentColor = SkyDarkAccent,
-                    unselectedContentColor = SkyDarkTextSecondary
-                )
-                Tab(
-                    selected = activeTab == 1,
-                    onClick = { activeTab = 1 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.AddBox, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("LAUNCHPAD")
-                        }
-                    },
-                    selectedContentColor = SkyDarkAccent,
-                    unselectedContentColor = SkyDarkTextSecondary
-                )
-                Tab(
-                    selected = activeTab == 2,
-                    onClick = { activeTab = 2 },
-                    text = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("METRICS")
-                        }
-                    },
-                    selectedContentColor = SkyDarkAccent,
-                    unselectedContentColor = SkyDarkTextSecondary
-                )
+                Button(
+                    onClick = { activeRole = 0; activeTab = 0 },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (activeRole == 0) SkyDarkAccent else Color(0x10FFFFFF)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = null,
+                        tint = if (activeRole == 0) SkyDarkBackground else SkyDarkTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "ADMIN CORE",
+                        color = if (activeRole == 0) SkyDarkBackground else SkyDarkTextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+
+                Button(
+                    onClick = { activeRole = 1; activeTab = 0 },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (activeRole == 1) Color(0xFFFF6B35) else Color(0x10FFFFFF)
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.LocalShipping,
+                        contentDescription = null,
+                        tint = if (activeRole == 1) SkyDarkBackground else SkyDarkTextSecondary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        "COURIER APP",
+                        color = if (activeRole == 1) SkyDarkBackground else SkyDarkTextSecondary,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            }
+
+            // Tab switchers based on active role
+            if (activeRole == 0) {
+                TabRow(
+                    selectedTabIndex = activeTab,
+                    containerColor = SkyDarkSurface,
+                    contentColor = SkyDarkAccent
+                ) {
+                    Tab(
+                        selected = activeTab == 0,
+                        onClick = { activeTab = 0 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FlightTakeoff, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("CONTROL (${orders.count { it.status != "Delivered" }})")
+                            }
+                        },
+                        selectedContentColor = SkyDarkAccent,
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                    Tab(
+                        selected = activeTab == 1,
+                        onClick = { activeTab = 1 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AddBox, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("LAUNCHPAD")
+                            }
+                        },
+                        selectedContentColor = SkyDarkAccent,
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                    Tab(
+                        selected = activeTab == 2,
+                        onClick = { activeTab = 2 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.BarChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("METRICS")
+                            }
+                        },
+                        selectedContentColor = SkyDarkAccent,
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                    Tab(
+                        selected = activeTab == 3,
+                        onClick = { activeTab = 3 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("CRM (${users.size})")
+                            }
+                        },
+                        selectedContentColor = SkyDarkAccent,
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                }
+            } else {
+                TabRow(
+                    selectedTabIndex = activeTab,
+                    containerColor = SkyDarkSurface,
+                    contentColor = Color(0xFFFF6B35)
+                ) {
+                    Tab(
+                        selected = activeTab == 0,
+                        onClick = { activeTab = 0 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.List, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("MISSIONS (${orders.count { it.status != "Delivered" }})")
+                            }
+                        },
+                        selectedContentColor = Color(0xFFFF6B35),
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                    Tab(
+                        selected = activeTab == 1,
+                        onClick = { activeTab = 1 },
+                        text = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.FlightTakeoff, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("COURIER HUBS")
+                            }
+                        },
+                        selectedContentColor = Color(0xFFFF6B35),
+                        unselectedContentColor = SkyDarkTextSecondary
+                    )
+                }
             }
 
             Box(
@@ -396,18 +577,395 @@ fun AdminAppContent(
                     .weight(1f)
                     .padding(16.dp)
             ) {
-                AnimatedContent(
-                    targetState = activeTab,
-                    transitionSpec = {
-                        slideInHorizontally { width -> if (targetState > initialState) width else -width } + fadeIn() togetherWith
-                                slideOutHorizontally { width -> if (targetState > initialState) -width else width } + fadeOut()
-                    },
-                    label = "tab_transitions"
-                ) { target ->
-                    when (target) {
+                if (activeRole == 0) {
+                    when (activeTab) {
                         0 -> ActiveOrdersConsole(orders = orders, onCompleteOrder = onCompleteOrder)
                         1 -> FoodLaunchpad(foods = foods, onAddFoodItem = onAddFoodItem, onDeleteFood = onDeleteFoodItem)
                         2 -> QuantumMetricsDashboard(orders = orders, foods = foods)
+                        3 -> AdminUserDirectory(users = users)
+                    }
+                } else {
+                    when (activeTab) {
+                        0 -> DeliveryAgentRunSheet(orders = orders, onUpdateStatus = onUpdateOrderStatus)
+                        1 -> DeliveryAgentHubs()
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminUserDirectory(users: List<AdminUser>) {
+    if (users.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Person, contentDescription = null, tint = SkyDarkTextSecondary, modifier = Modifier.size(64.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Database registers are empty.", color = SkyDarkTextSecondary, style = MaterialTheme.typography.bodyLarge)
+                Text("Sign up a new user from the User app to view record packets.", color = SkyDarkTextSecondary.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text(
+                    text = "QUANTUM USER BACKEND (CRM REGISTRY)",
+                    fontWeight = FontWeight.ExtraBold,
+                    color = SkyDarkAccent,
+                    fontSize = 12.sp,
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+            items(users) { user ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, Color(0x15FFFFFF), RoundedCornerShape(12.dp)),
+                    colors = CardDefaults.cardColors(containerColor = SkyDarkSurface),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(SkyDarkAccent.copy(alpha = 0.12f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = user.name.take(1).uppercase(),
+                                fontWeight = FontWeight.Black,
+                                color = SkyDarkAccent,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = user.name.uppercase(),
+                                fontWeight = FontWeight.ExtraBold,
+                                color = SkyDarkTextPrimary,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = "EMAIL: ${user.email}",
+                                color = SkyDarkTextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                            Text(
+                                text = "PHONE: ${user.phone}",
+                                color = SkyDarkTextSecondary,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                            )
+                        }
+                        Surface(
+                            color = Color(0x10FFFFFF),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "ID: ${user.id}",
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = SkyDarkTextSecondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DeliveryAgentRunSheet(
+    orders: List<Order>,
+    onUpdateStatus: (Int, String) -> Unit
+) {
+    val activeOrders = orders.filter { it.status != "Delivered" }
+    val completedOrders = orders.filter { it.status == "Delivered" }
+
+    if (orders.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.LocalShipping, contentDescription = null, tint = SkyDarkTextSecondary, modifier = Modifier.size(64.dp))
+                Spacer(modifier = Modifier.height(16.dp))
+                Text("No dispatch runs available.", color = SkyDarkTextSecondary, style = MaterialTheme.typography.bodyLarge)
+                Text("Please place an order from the main app first.", color = SkyDarkTextSecondary.copy(alpha = 0.5f), style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            if (activeOrders.isNotEmpty()) {
+                item {
+                    Text(
+                        "COURIER RUNS - ACTIVE DISPATCHES",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFFFF6B35),
+                        fontSize = 13.sp,
+                        letterSpacing = 1.sp
+                    )
+                }
+                items(activeOrders) { order ->
+                    DeliveryRunCard(order = order, onUpdateStatus = onUpdateStatus)
+                }
+            } else {
+                item {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 32.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF00D4AA), modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("All payloads delivered successfully!", color = SkyDarkTextPrimary, fontWeight = FontWeight.Bold)
+                            Text("Awaiting new launch sequences...", color = SkyDarkTextSecondary, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+            }
+
+            if (completedOrders.isNotEmpty()) {
+                item {
+                    Text(
+                        "COMPLETED RUN PACKETS",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = SkyDarkTextSecondary,
+                        fontSize = 13.sp,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                items(completedOrders) { order ->
+                    DeliveryCompletedCard(order = order)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DeliveryRunCard(
+    order: Order,
+    onUpdateStatus: (Int, String) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFFFF6B35).copy(alpha = 0.4f), RoundedCornerShape(16.dp)),
+        colors = CardDefaults.cardColors(containerColor = SkyDarkSurface),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        "MISSION ID: #${order.id}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Black,
+                        color = SkyDarkTextPrimary
+                    )
+                    Text(
+                        "Timestamp: " + java.text.SimpleDateFormat("MMM dd, HH:mm", java.util.Locale.getDefault()).format(java.util.Date(order.timestamp)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SkyDarkTextSecondary
+                    )
+                }
+                Surface(
+                    color = Color(0xFFFF6B35).copy(alpha = 0.15f),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.border(1.dp, Color(0xFFFF6B35), RoundedCornerShape(20.dp))
+                ) {
+                    Text(
+                        order.status.uppercase(),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = Color(0xFFFF6B35)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+            Divider(color = Color(0x10FFFFFF))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.ShoppingCart, contentDescription = null, tint = Color(0xFFFF6B35), modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "CARGO LOAD: ${order.itemsJson}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = SkyDarkTextPrimary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(Icons.Default.LocationOn, contentDescription = null, tint = Color(0xFF00D4AA), modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    "DROP SITE: ${order.deliveryAddress}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SkyDarkTextSecondary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Step-by-step progress button
+            val (buttonText, nextStatus, buttonColor) = when (order.status) {
+                "Preparing order", "Preparing" -> Triple("🛰️ DISPATCH DRONE", "Drone dispatched", Color(0xFF00BFFF))
+                "Drone dispatched", "Dispatched" -> Triple("🚀 GO IN-TRANSIT", "In transit", Color(0xFF00D4AA))
+                "In transit", "In Transit" -> Triple("🎯 SIGNAL ARRIVAL", "Arriving", Color(0xFFFFD700))
+                "Arriving" -> Triple("📦 DROP PAYLOAD", "Delivered", Color(0xFF00FF7F))
+                else -> Triple("🛰️ DISPATCH DRONE", "Drone dispatched", Color(0xFF00BFFF))
+            }
+
+            Button(
+                onClick = { onUpdateStatus(order.id, nextStatus) },
+                colors = ButtonDefaults.buttonColors(containerColor = buttonColor),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = buttonText,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = SkyDarkBackground
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun DeliveryCompletedCard(order: Order) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color.White.copy(alpha = 0.05f), RoundedCornerShape(12.dp)),
+        colors = CardDefaults.cardColors(containerColor = SkyDarkSurface.copy(alpha = 0.6f)),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    "MISSION #${order.id} SUCCESSFUL",
+                    fontWeight = FontWeight.Bold,
+                    color = SkyDarkTextSecondary,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "Amount Collected: ₹${order.totalAmount}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color(0xFF00D4AA),
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Icon(
+                imageVector = Icons.Default.CheckCircle,
+                contentDescription = null,
+                tint = Color(0x3000D4AA),
+                modifier = Modifier.size(32.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun DeliveryAgentHubs() {
+    val hubs = remember {
+        listOf(
+            "Central SkyBite Hangar - Sector Alpha (Delhi NCR)",
+            "Drone AirDock 4 - West Quadrant (Noida)",
+            "Stratosphere Distribution Station - Sector Gamma (Gurugram)",
+            "Jetport Warehouse - Sector Delta (Bengaluru)"
+        )
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                "COURIER AIRDOCK REGISTRY",
+                fontWeight = FontWeight.ExtraBold,
+                color = Color(0xFFFF6B35),
+                fontSize = 13.sp,
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+        }
+        items(hubs) { hub ->
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, Color(0x10FFFFFF), RoundedCornerShape(12.dp)),
+                colors = CardDefaults.cardColors(containerColor = SkyDarkSurface),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFFFF6B35).copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.FlightTakeoff, contentDescription = null, tint = Color(0xFFFF6B35))
+                    }
+                    Spacer(modifier = Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            text = hub,
+                            fontWeight = FontWeight.Bold,
+                            color = SkyDarkTextPrimary,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "STATUS: FULLY OPERATIONAL",
+                            color = Color(0xFF00D4AA),
+                            fontWeight = FontWeight.ExtraBold,
+                            style = MaterialTheme.typography.labelSmall
+                        )
                     }
                 }
             }

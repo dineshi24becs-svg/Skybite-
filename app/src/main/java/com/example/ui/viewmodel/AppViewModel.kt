@@ -155,7 +155,48 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         viewModelScope.launch {
-            appDao.getOrderHistory().collect { _orderHistory.value = it }
+            appDao.getOrderHistory().collect { list ->
+                _orderHistory.value = list
+                
+                // Real-time synchronization of active tracked order with backend/Admin database updates!
+                val active = _activeTrackedOrder.value
+                if (active != null) {
+                    val latest = list.find { it.id == active.id }
+                    if (latest != null && latest.status != active.status) {
+                        _activeTrackedOrder.value = latest
+                        _droneStatus.value = latest.status
+                        
+                        val (mappedProgress, secondsLeft) = when (latest.status) {
+                            "Preparing order", "Preparing" -> 0.10f to 150
+                            "Drone dispatched", "Dispatched" -> 0.35f to 110
+                            "In transit", "In Transit" -> 0.65f to 60
+                            "Arriving" -> 0.85f to 20
+                            "Delivered" -> 1.0f to 0
+                            else -> 0.10f to 150
+                        }
+                        
+                        _droneProgress.value = mappedProgress
+                        _deliverySecondsRemaining.value = secondsLeft
+                        
+                        if (latest.status == "Delivered") {
+                            trackingJob?.cancel()
+                            showToast("Delivery dropped! Landing successful.", ToastType.SUCCESS)
+                            val firstFoodId = latest.itemsJson.split(",").firstOrNull()?.split(":")?.firstOrNull()?.toIntOrNull()
+                            if (firstFoodId != null) {
+                                _showReviewFormForCompletedOrder.value = firstFoodId
+                            }
+                        } else {
+                            showToast("Flight status updated: ${latest.status}", ToastType.INFO)
+                        }
+                        
+                        _droneGps.value = DroneGpsService.trackDroneGps(
+                            progress = mappedProgress,
+                            status = latest.status,
+                            orderId = latest.id
+                        )
+                    }
+                }
+            }
         }
         viewModelScope.launch {
             try {

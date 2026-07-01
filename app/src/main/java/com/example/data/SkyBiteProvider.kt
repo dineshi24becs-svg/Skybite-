@@ -15,10 +15,12 @@ class SkyBiteProvider : ContentProvider() {
         
         const val FOOD_ITEMS = 1
         const val ORDERS = 2
+        const val USERS = 3
 
         private val uriMatcher = UriMatcher(UriMatcher.NO_MATCH).apply {
             addURI(AUTHORITY, "food_items", FOOD_ITEMS)
             addURI(AUTHORITY, "order_history", ORDERS)
+            addURI(AUTHORITY, "users", USERS)
         }
     }
 
@@ -38,6 +40,7 @@ class SkyBiteProvider : ContentProvider() {
         val table = when (uriMatcher.match(uri)) {
             FOOD_ITEMS -> "food_items"
             ORDERS -> "order_history"
+            USERS -> "users"
             else -> throw IllegalArgumentException("Unknown URI: $uri")
         }
 
@@ -61,6 +64,7 @@ class SkyBiteProvider : ContentProvider() {
         val table = when (uriMatcher.match(uri)) {
             FOOD_ITEMS -> "food_items"
             ORDERS -> "order_history"
+            USERS -> "users"
             else -> throw IllegalArgumentException("Unknown URI: $uri")
         }
 
@@ -85,6 +89,7 @@ class SkyBiteProvider : ContentProvider() {
         val table = when (uriMatcher.match(uri)) {
             FOOD_ITEMS -> "food_items"
             ORDERS -> "order_history"
+            USERS -> "users"
             else -> throw IllegalArgumentException("Unknown URI: $uri")
         }
 
@@ -102,6 +107,7 @@ class SkyBiteProvider : ContentProvider() {
         val table = when (uriMatcher.match(uri)) {
             FOOD_ITEMS -> "food_items"
             ORDERS -> "order_history"
+            USERS -> "users"
             else -> throw IllegalArgumentException("Unknown URI: $uri")
         }
 
@@ -116,6 +122,7 @@ class SkyBiteProvider : ContentProvider() {
         return when (uriMatcher.match(uri)) {
             FOOD_ITEMS -> "vnd.android.cursor.dir/$AUTHORITY.food_items"
             ORDERS -> "vnd.android.cursor.dir/$AUTHORITY.order_history"
+            USERS -> "vnd.android.cursor.dir/$AUTHORITY.users"
             else -> null
         }
     }

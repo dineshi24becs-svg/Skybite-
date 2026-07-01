@@ -26,3 +26,4 @@ rootProject.name = "My Application"
 
 include(":app")
 include(":admin")
+include(":delivery")

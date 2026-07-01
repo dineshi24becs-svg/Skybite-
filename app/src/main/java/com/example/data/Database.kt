@@ -94,6 +94,9 @@ interface AppDao {
     @Query("SELECT * FROM users WHERE email = :email LIMIT 1")
     suspend fun getUserByEmail(email: String): UserEntity?
 
+    @Query("SELECT * FROM users")
+    fun getAllUsersFlow(): Flow<List<UserEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)
 

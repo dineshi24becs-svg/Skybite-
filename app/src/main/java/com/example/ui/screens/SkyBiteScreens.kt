@@ -431,6 +431,7 @@ fun SplashScreen(isDarkMode: Boolean) {
 fun LoginScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf("User") } // "User" or "Admin"
 
     val bgBrush = if (isDarkMode) {
         Brush.radialGradient(colors = listOf(Color(0xFF111E36), SkyDarkBackground))
@@ -468,18 +469,60 @@ fun LoginScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "Pilot, login to dispatch your meal",
+                    text = if (selectedRole == "Admin") "Access Space Logistics Console" else "Login to dispatch your meal",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
+                    modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                     textAlign = TextAlign.Center
                 )
+
+                // Role Selector Tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
+                        .background(
+                            color = if (isDarkMode) Color(0xFF1F2937) else Color(0xFFF3F4F6),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("User", "Admin").forEach { role ->
+                        val isSelected = selectedRole == role
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .background(
+                                    color = if (isSelected) {
+                                        if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                    } else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { selectedRole = role }
+                                .testTag("role_select_${role.lowercase()}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (role == "User") "CUSTOMER USER" else "SPACE ADMIN",
+                                color = if (isSelected) Color.White else {
+                                    if (isDarkMode) Color.Gray else Color.DarkGray
+                                },
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                    }
+                }
 
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Quantum Email") },
-                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                    label = { Text(if (selectedRole == "Admin") "Admin Username / Email" else "Username") },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("login_email_input"),
@@ -492,7 +535,7 @@ fun LoginScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Access Code") },
+                    label = { Text(if (selectedRole == "Admin") "Admin Password" else "Password") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -505,47 +548,66 @@ fun LoginScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                TextButton(
-                    onClick = { viewModel.navigateTo(Screen.FORGOT_PASSWORD) },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text(
-                        text = "Emergency access key lost?",
-                        color = if (isDarkMode) SkyDarkAccent else SkyLightAccent,
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                if (selectedRole == "User") {
+                    TextButton(
+                        onClick = { viewModel.navigateTo(Screen.FORGOT_PASSWORD) },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text(
+                            text = "Forgot Password?",
+                            color = if (isDarkMode) SkyDarkAccent else SkyLightAccent,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 SkyBiteButton(
-                    text = "INITIATE LAUNCH",
-                    onClick = { viewModel.loginUser(email, password) },
+                    text = if (selectedRole == "Admin") "ACCESS TERMINAL" else "INITIATE LAUNCH",
+                    onClick = {
+                        if (selectedRole == "Admin") {
+                            viewModel.loginAdmin(email, password)
+                        } else {
+                            viewModel.loginUser(email, password)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth(),
-                    icon = Icons.Default.RocketLaunch,
+                    icon = if (selectedRole == "Admin") Icons.Default.Settings else Icons.Default.RocketLaunch,
                     testTag = "login_button"
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                if (selectedRole == "User") {
+                    Spacer(modifier = Modifier.height(24.dp))
 
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "New pilot candidate?",
-                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    TextButton(onClick = { viewModel.navigateTo(Screen.SIGNUP) }) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            text = "Sign Up",
-                            color = if (isDarkMode) SkyDarkOrange else SkyLightOrange,
-                            fontWeight = FontWeight.Bold,
+                            text = "New pilot candidate?",
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
                             style = MaterialTheme.typography.bodyMedium
                         )
+                        TextButton(onClick = { viewModel.navigateTo(Screen.SIGNUP) }) {
+                            Text(
+                                text = "Sign Up",
+                                color = if (isDarkMode) SkyDarkOrange else SkyLightOrange,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                     }
+                } else {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Use default: admin / admin",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = (if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary).copy(alpha = 0.7f)
+                    )
                 }
             }
         }
@@ -834,13 +896,13 @@ fun ForgotPasswordScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "Request Emergency Core Link",
+                    text = "Forgot Password",
                     style = MaterialTheme.typography.displayMedium.copy(fontSize = 22.sp),
                     color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary,
                     textAlign = TextAlign.Center
                 )
                 Text(
-                    text = "A hyper-spatial beam link will be fired to reset your security password.",
+                    text = "Enter your Username or Email to reset your security password.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
                     modifier = Modifier.padding(top = 4.dp, bottom = 24.dp),
@@ -850,7 +912,7 @@ fun ForgotPasswordScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Quantum Email Address") },
+                    label = { Text("Username or Email Address") },
                     leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -862,7 +924,7 @@ fun ForgotPasswordScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 Spacer(modifier = Modifier.height(24.dp))
 
                 SkyBiteButton(
-                    text = "FIRE BEAM RESET",
+                    text = "RESET PASSWORD",
                     onClick = { viewModel.forgotPassword(email) },
                     modifier = Modifier.fillMaxWidth(),
                     icon = Icons.Default.SettingsBackupRestore,
@@ -873,7 +935,7 @@ fun ForgotPasswordScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
                 TextButton(onClick = { viewModel.navigateTo(Screen.LOGIN) }) {
                     Text(
-                        text = "Recalibrate Login Space",
+                        text = "Back to Login",
                         color = if (isDarkMode) SkyDarkAccent else SkyLightAccent,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -3580,6 +3642,624 @@ fun OrderHistoryScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                                 PriceRow("Delivery Address", log.deliveryAddress, isDarkMode)
                                 PriceRow("Cost Payload", "₹${log.totalAmount.toInt()}", isDarkMode)
                             }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
+    val orderHistory by viewModel.orderHistory.collectAsState()
+    val allUsers by viewModel.allUsers.collectAsState()
+    val foodItems by viewModel.allFoodItemsFlow.collectAsState()
+    
+    var currentTab by remember { mutableStateOf(0) } // 0 = Flight Jobs, 1 = Hangar Catalog, 2 = User Directory
+    
+    // Add Item Fields State
+    var newName by remember { mutableStateOf("") }
+    var newPrice by remember { mutableStateOf("") }
+    var newDesc by remember { mutableStateOf("") }
+    var newCategory by remember { mutableStateOf("Burger") }
+    var newImgUrl by remember { mutableStateOf("https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&w=300&q=80") }
+
+    val bgBrush = if (isDarkMode) {
+        Brush.radialGradient(colors = listOf(Color(0xFF0F172A), SkyDarkBackground))
+    } else {
+        Brush.verticalGradient(listOf(SkyLightBackground, Color.White))
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(bgBrush)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp)
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "SKYBITE SPACE COMMAND",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.5.sp
+                        ),
+                        color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                    )
+                    Text(
+                        text = "Quantum Drone Logistics Dashboard",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                    )
+                }
+
+                IconButton(
+                    onClick = {
+                        viewModel.showToast("Disengaging from Admin Terminal...", ToastType.INFO)
+                        viewModel.navigateTo(Screen.LOGIN)
+                    },
+                    modifier = Modifier
+                        .background(
+                            color = if (isDarkMode) Color(0x11FF5555) else Color(0x11FF0000),
+                            shape = CircleShape
+                        )
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ExitToApp,
+                        contentDescription = "Log Out",
+                        tint = if (isDarkMode) Color(0xFFFF5555) else Color(0xFFDD0000)
+                    )
+                }
+            }
+
+            // Quick Stats Grid
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Stat 1: Total Revenue
+                val totalRevenue = orderHistory.sumOf { it.totalAmount }
+                AdminStatCard(
+                    title = "REVENUE PAYLOAD",
+                    value = "₹${totalRevenue.toInt()}",
+                    icon = Icons.Default.ShoppingCart,
+                    color = Color(0xFF00D4AA),
+                    isDarkMode = isDarkMode,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Stat 2: Active Drones (Flight Logs)
+                AdminStatCard(
+                    title = "FLIGHT LOGS",
+                    value = "${orderHistory.size}",
+                    icon = Icons.Default.RocketLaunch,
+                    color = Color(0xFFFFA500),
+                    isDarkMode = isDarkMode,
+                    modifier = Modifier.weight(1f)
+                )
+
+                // Stat 3: Registered Pilots (Users)
+                AdminStatCard(
+                    title = "PILOTS",
+                    value = "${allUsers.size}",
+                    icon = Icons.Default.Person,
+                    color = Color(0xFF2196F3),
+                    isDarkMode = isDarkMode,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // Custom Tabs
+            TabRow(
+                selectedTabIndex = currentTab,
+                containerColor = Color.Transparent,
+                contentColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                modifier = Modifier.padding(bottom = 16.dp)
+            ) {
+                Tab(
+                    selected = currentTab == 0,
+                    onClick = { currentTab = 0 },
+                    text = { Text("FLIGHT JOBS", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    icon = { Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = currentTab == 1,
+                    onClick = { currentTab = 1 },
+                    text = { Text("HANGAR CATALOG", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    icon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = currentTab == 2,
+                    onClick = { currentTab = 2 },
+                    text = { Text("USER DIRECTORY", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    icon = { Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+            }
+
+            // Tab Content
+            Box(modifier = Modifier.weight(1f)) {
+                when (currentTab) {
+                    0 -> AdminFlightJobsSection(
+                        orders = orderHistory,
+                        onUpdateStatus = { id, status -> viewModel.updateOrderStatus(id, status) },
+                        isDarkMode = isDarkMode,
+                        viewModel = viewModel
+                    )
+                    1 -> AdminHangarCatalogSection(
+                        foodItems = foodItems,
+                        onAddItem = { name, price, desc, cat, img -> viewModel.addNewFoodItem(name, price, desc, cat, img) },
+                        onDeleteItem = { id -> viewModel.deleteFoodItem(id) },
+                        newName = newName,
+                        onNameChange = { newName = it },
+                        newPrice = newPrice,
+                        onPriceChange = { newPrice = it },
+                        newDesc = newDesc,
+                        onDescChange = { newDesc = it },
+                        newCategory = newCategory,
+                        onCategoryChange = { newCategory = it },
+                        newImgUrl = newImgUrl,
+                        onImgUrlChange = { newImgUrl = it },
+                        isDarkMode = isDarkMode
+                    )
+                    2 -> AdminUserDirectorySection(
+                        users = allUsers,
+                        isDarkMode = isDarkMode
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminStatCard(
+    title: String,
+    value: String,
+    icon: ImageVector,
+    color: Color,
+    isDarkMode: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.2f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Black),
+                color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+            )
+        }
+    }
+}
+
+@Composable
+fun AdminFlightJobsSection(
+    orders: List<OrderHistoryEntity>,
+    onUpdateStatus: (Int, String) -> Unit,
+    isDarkMode: Boolean,
+    viewModel: AppViewModel
+) {
+    if (orders.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "No cargo runs placed in SkyBite system.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+            )
+        }
+    } else {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(orders) { order ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "RUN ID: #${order.id}",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                            )
+                            
+                            // Status Chip
+                            val statusColor = when (order.status) {
+                                "Preparing order", "Preparing" -> Color(0xFFFFA500)
+                                "Drone dispatched", "Dispatched" -> Color(0xFF2196F3)
+                                "In transit", "In Transit" -> Color(0xFF00BCD4)
+                                "Arriving" -> Color(0xFF9C27B0)
+                                "Delivered" -> Color(0xFF00D4AA)
+                                else -> Color.Gray
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .background(statusColor.copy(alpha = 0.15f), RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = order.status.uppercase(),
+                                    color = statusColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Items Splitting
+                        val itemsList = order.itemsJson.split(",").mapNotNull { item ->
+                            val parts = item.split(":")
+                            val id = parts.getOrNull(0)?.toIntOrNull()
+                            val qty = parts.getOrNull(1)?.toIntOrNull() ?: 1
+                            val food = viewModel.allFoodItems.find { it.id == id }
+                            if (food != null) {
+                                "${qty}x ${food.name}"
+                            } else null
+                        }
+
+                        Text(
+                            text = "Cargo: " + itemsList.joinToString(", "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                        )
+
+                        Text(
+                            text = "Dest: ${order.deliveryAddress}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                            maxLines = 1
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        HorizontalDivider(color = if (isDarkMode) Color.Gray.copy(alpha = 0.2f) else Color.LightGray.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Admin actions
+                        Text(
+                            text = "COMMAND FLIGHT PATTERN:",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            val statuses = listOf("Preparing", "Dispatched", "In Transit", "Arriving", "Delivered")
+                            statuses.forEach { s ->
+                                val isCurrent = order.status == s || (s == "Preparing" && order.status == "Preparing order") || (s == "Dispatched" && order.status == "Drone dispatched")
+                                val btnBg = if (isCurrent) {
+                                    if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                } else {
+                                    if (isDarkMode) Color(0xFF111827) else Color.LightGray.copy(alpha = 0.4f)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(30.dp)
+                                        .background(btnBg, RoundedCornerShape(6.dp))
+                                        .clickable { onUpdateStatus(order.id, s) },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = s.uppercase().replace("IN ", ""),
+                                        fontSize = 8.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isCurrent) Color.White else (if (isDarkMode) Color.Gray else Color.DarkGray)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminHangarCatalogSection(
+    foodItems: List<FoodItem>,
+    onAddItem: (String, Double, String, String, String) -> Unit,
+    onDeleteItem: (Int) -> Unit,
+    newName: String,
+    onNameChange: (String) -> Unit,
+    newPrice: String,
+    onPriceChange: (String) -> Unit,
+    newDesc: String,
+    onDescChange: (String) -> Unit,
+    newCategory: String,
+    onCategoryChange: (String) -> Unit,
+    newImgUrl: String,
+    onImgUrlChange: (String) -> Unit,
+    isDarkMode: Boolean
+) {
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Form Section Header
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.15f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "DEPLOY NEW FOOD CARGO",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = onNameChange,
+                        label = { Text("Item Name") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = newPrice,
+                            onValueChange = onPriceChange,
+                            label = { Text("Price (₹)") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                            )
+                        )
+                        OutlinedTextField(
+                            value = newCategory,
+                            onValueChange = onCategoryChange,
+                            label = { Text("Category") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                            )
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = newDesc,
+                        onValueChange = onDescChange,
+                        label = { Text("Cargo Description") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = newImgUrl,
+                        onValueChange = onImgUrlChange,
+                        label = { Text("Image URL") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            val priceVal = newPrice.toDoubleOrNull() ?: 0.0
+                            onAddItem(newName, priceVal, newDesc, newCategory, newImgUrl)
+                            onNameChange("")
+                            onPriceChange("")
+                            onDescChange("")
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("LAUNCH NEW CARGO ITEM", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // Active Items List Header
+        item {
+            Text(
+                text = "ACTIVE HANGAR ITEMS (${foodItems.size})",
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleSmall,
+                color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
+
+        // Items Catalog
+        items(foodItems) { item ->
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDarkMode) SkyDarkSurfaceVariant.copy(alpha = 0.6f) else Color.LightGray.copy(alpha = 0.1f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = item.name,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                        )
+                        Text(
+                            text = "${item.category} • ₹${item.price.toInt()}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { onDeleteItem(item.id) },
+                        modifier = Modifier.background(
+                            color = if (isDarkMode) Color(0x11FF5555) else Color(0x11FF0000),
+                            shape = CircleShape
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete Cargo",
+                            tint = if (isDarkMode) Color(0xFFFF5555) else Color(0xFFDD0000),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminUserDirectorySection(
+    users: List<UserEntity>,
+    isDarkMode: Boolean
+) {
+    if (users.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "No pilots registered on SkyBite satellite database.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+            )
+        }
+    } else {
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            items(users) { user ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.15f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = user.name,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Email: ${user.email}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                            )
+                            Text(
+                                text = "Comms: ${user.phone}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                            )
+                        }
+
+                        // Status Badge
+                        Box(
+                            modifier = Modifier
+                                .background(
+                                    color = (if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(6.dp)
+                                )
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "COUPLED PILOT",
+                                color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
                 }

@@ -88,7 +88,8 @@ class MainActivity : ComponentActivity() {
                             if (currentScreen != Screen.SPLASH && 
                                 currentScreen != Screen.LOGIN && 
                                 currentScreen != Screen.SIGNUP && 
-                                currentScreen != Screen.FORGOT_PASSWORD
+                                currentScreen != Screen.FORGOT_PASSWORD &&
+                                currentScreen != Screen.ADMIN_DASHBOARD
                             ) {
                                 AppHeader(
                                     viewModel = viewModel,
@@ -102,7 +103,8 @@ class MainActivity : ComponentActivity() {
                             if (currentScreen != Screen.SPLASH && 
                                 currentScreen != Screen.LOGIN && 
                                 currentScreen != Screen.SIGNUP && 
-                                currentScreen != Screen.FORGOT_PASSWORD
+                                currentScreen != Screen.FORGOT_PASSWORD &&
+                                currentScreen != Screen.ADMIN_DASHBOARD
                             ) {
                                 FuturisticBottomNavigation(
                                     currentScreen = currentScreen,
@@ -135,6 +137,7 @@ class MainActivity : ComponentActivity() {
                                     Screen.TRACKING -> TrackingScreen(viewModel = viewModel, isDarkMode = isDarkMode)
                                     Screen.PROFILE -> ProfileScreen(viewModel = viewModel, isDarkMode = isDarkMode)
                                     Screen.ORDER_HISTORY -> OrderHistoryScreen(viewModel = viewModel, isDarkMode = isDarkMode)
+                                    Screen.ADMIN_DASHBOARD -> AdminDashboardScreen(viewModel = viewModel, isDarkMode = isDarkMode)
                                 }
                             }
                         }

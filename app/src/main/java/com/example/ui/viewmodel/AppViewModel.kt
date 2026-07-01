@@ -20,7 +20,8 @@ enum class Screen {
     CHECKOUT,
     TRACKING,
     PROFILE,
-    ORDER_HISTORY
+    ORDER_HISTORY,
+    ADMIN_DASHBOARD
 }
 
 data class CartDisplayItem(
@@ -53,6 +54,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     // Auth State
     private val _currentUser = MutableStateFlow<UserEntity?>(null)
     val currentUser: StateFlow<UserEntity?> = _currentUser.asStateFlow()
+
+    private val _currentUserRole = MutableStateFlow("User")
+    val currentUserRole: StateFlow<String> = _currentUserRole.asStateFlow()
+
+    private val _allUsers = MutableStateFlow<List<UserEntity>>(emptyList())
+    val allUsers: StateFlow<List<UserEntity>> = _allUsers.asStateFlow()
 
     private val _demoOtpCode = MutableStateFlow("")
     val demoOtpCode: StateFlow<String> = _demoOtpCode.asStateFlow()
@@ -148,6 +155,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         // Collect database flows
         viewModelScope.launch {
             appDao.getCartItems().collect { _cartItems.value = it }
+        }
+        viewModelScope.launch {
+            appDao.getAllUsersFlow().collect { _allUsers.value = it }
         }
         viewModelScope.launch {
             appDao.getFavorites().collect { favList ->
@@ -303,6 +313,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val loggedUser = appDao.getUserByEmail(user.email)
                     _currentUser.value = loggedUser
+                    _currentUserRole.value = "User"
                     _otpTempUser.value = null
                     showToast("Welcome back, ${loggedUser?.name ?: "Pilot"}!", ToastType.SUCCESS)
                     _currentScreen.value = Screen.HOME
@@ -316,6 +327,101 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     fun closeOtpDialog() {
         _showOtpVerifyDialog.value = false
         _otpTempUser.value = null
+    }
+
+    fun loginAdmin(emailText: String, passwordText: String) {
+        if (emailText.isBlank() || passwordText.isBlank()) {
+            showToast("Please fill all fields.", ToastType.ERROR)
+            return
+        }
+        val cleanEmail = emailText.trim()
+        if ((cleanEmail == "admin" || cleanEmail == "admin@skybite.com") && 
+            (passwordText == "admin" || passwordText == "admin123")) {
+            showToast("Welcome back, Commander Admin!", ToastType.SUCCESS)
+            _currentUser.value = UserEntity(
+                id = -99,
+                email = "admin@skybite.com",
+                phone = "000-000-0000",
+                name = "SkyBite Commander Admin",
+                passwordHash = "admin"
+            )
+            _currentUserRole.value = "Admin"
+            _currentScreen.value = Screen.ADMIN_DASHBOARD
+        } else {
+            viewModelScope.launch {
+                val user = appDao.getUserByEmail(cleanEmail)
+                if (user != null && user.passwordHash == passwordText && (cleanEmail.contains("admin") || user.name.lowercase().contains("admin"))) {
+                    showToast("Admin credentials matched. Opening Space Command...", ToastType.SUCCESS)
+                    _currentUser.value = user
+                    _currentUserRole.value = "Admin"
+                    _currentScreen.value = Screen.ADMIN_DASHBOARD
+                } else {
+                    showToast("Invalid admin credentials. Hint: use admin/admin", ToastType.ERROR)
+                }
+            }
+        }
+    }
+
+    fun updateOrderStatus(orderId: Int, newStatus: String) {
+        viewModelScope.launch {
+            val list = _orderHistory.value
+            val found = list.find { it.id == orderId }
+            if (found != null) {
+                val updated = found.copy(status = newStatus)
+                appDao.insertOrder(updated)
+                showToast("Order #$orderId updated to: $newStatus", ToastType.SUCCESS)
+                
+                if (_activeTrackedOrder.value?.id == orderId) {
+                    _activeTrackedOrder.value = updated
+                    _droneStatus.value = newStatus
+                    val (mappedProgress, secondsLeft) = when (newStatus) {
+                        "Preparing order", "Preparing" -> 0.10f to 150
+                        "Drone dispatched", "Dispatched" -> 0.35f to 110
+                        "In transit", "In Transit" -> 0.65f to 60
+                        "Arriving" -> 0.85f to 20
+                        "Delivered" -> 1.0f to 0
+                        else -> 0.10f to 150
+                    }
+                    _droneProgress.value = mappedProgress
+                    _deliverySecondsRemaining.value = secondsLeft
+                    _droneGps.value = DroneGpsService.trackDroneGps(
+                        progress = mappedProgress,
+                        status = newStatus,
+                        orderId = orderId
+                    )
+                }
+            }
+        }
+    }
+
+    fun deleteFoodItem(id: Int) {
+        viewModelScope.launch {
+            appDao.deleteFoodItem(id)
+            showToast("Item deleted from Hangar Catalog", ToastType.SUCCESS)
+        }
+    }
+
+    fun addNewFoodItem(name: String, price: Double, description: String, category: String, imageUrl: String) {
+        if (name.isBlank() || price <= 0.0 || description.isBlank() || category.isBlank() || imageUrl.isBlank()) {
+            showToast("Please enter valid item details.", ToastType.ERROR)
+            return
+        }
+        viewModelScope.launch {
+            val item = FoodItemEntity(
+                name = name,
+                price = price,
+                description = description,
+                category = category,
+                imageUrl = imageUrl,
+                isTrending = Random.nextBoolean(),
+                isPopular = Random.nextBoolean(),
+                isAiRecommended = Random.nextBoolean(),
+                rating = 4.0 + Random.nextDouble() * 1.0,
+                deliveryTimeMin = 15 + Random.nextInt(20)
+            )
+            appDao.insertFoodItem(item)
+            showToast("Successfully deployed new food item!", ToastType.SUCCESS)
+        }
     }
 
     fun forgotPassword(email: String) {

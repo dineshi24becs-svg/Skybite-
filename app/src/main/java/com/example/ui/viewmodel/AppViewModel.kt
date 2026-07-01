@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.*
@@ -42,6 +43,23 @@ enum class ToastType {
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val appDao = AppDatabase.getDatabase(application).appDao()
+
+    private val prefs = application.getSharedPreferences("skybite_admin_prefs", Context.MODE_PRIVATE)
+
+    private val _adminUsername = MutableStateFlow(prefs.getString("admin_username", "admin") ?: "admin")
+    val adminUsername: StateFlow<String> = _adminUsername.asStateFlow()
+
+    private val _adminPassword = MutableStateFlow(prefs.getString("admin_password", "admin") ?: "admin")
+    val adminPassword: StateFlow<String> = _adminPassword.asStateFlow()
+
+    private val _adminPhonePeNumber = MutableStateFlow(prefs.getString("admin_phonepe_number", "9876543210") ?: "9876543210")
+    val adminPhonePeNumber: StateFlow<String> = _adminPhonePeNumber.asStateFlow()
+
+    private val _adminPhonePeUpi = MutableStateFlow(prefs.getString("admin_phonepe_upi", "9876543210@ybl") ?: "9876543210@ybl")
+    val adminPhonePeUpi: StateFlow<String> = _adminPhonePeUpi.asStateFlow()
+
+    private val _adminPaymentSubscribed = MutableStateFlow(prefs.getBoolean("admin_payment_subscribed", false))
+    val adminPaymentSubscribed: StateFlow<Boolean> = _adminPaymentSubscribed.asStateFlow()
 
     // Screen State
     private val _currentScreen = MutableStateFlow(Screen.SPLASH)
@@ -335,15 +353,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val cleanEmail = emailText.trim()
-        if ((cleanEmail == "admin" || cleanEmail == "admin@skybite.com") && 
-            (passwordText == "admin" || passwordText == "admin123")) {
-            showToast("Welcome back, Commander Admin!", ToastType.SUCCESS)
+        val customUser = adminUsername.value
+        val customPass = adminPassword.value
+        
+        val isDefaultAdmin = (cleanEmail == "admin" || cleanEmail == "admin@skybite.com") && 
+                (passwordText == "admin" || passwordText == "admin123")
+        val isCustomAdmin = cleanEmail.lowercase() == customUser.lowercase() && passwordText == customPass
+
+        if (isDefaultAdmin || isCustomAdmin) {
+            val adminName = if (isCustomAdmin) customUser else "SkyBite Commander Admin"
+            showToast("Welcome back, $adminName!", ToastType.SUCCESS)
             _currentUser.value = UserEntity(
                 id = -99,
                 email = "admin@skybite.com",
                 phone = "000-000-0000",
-                name = "SkyBite Commander Admin",
-                passwordHash = "admin"
+                name = adminName,
+                passwordHash = customPass
             )
             _currentUserRole.value = "Admin"
             _currentScreen.value = Screen.ADMIN_DASHBOARD
@@ -356,9 +381,44 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     _currentUserRole.value = "Admin"
                     _currentScreen.value = Screen.ADMIN_DASHBOARD
                 } else {
-                    showToast("Invalid admin credentials. Hint: use admin/admin", ToastType.ERROR)
+                    showToast("Invalid admin credentials. Use configured Unique Username or admin/admin", ToastType.ERROR)
                 }
             }
+        }
+    }
+
+    fun updateAdminSettings(username: String, password: String, phonePeNum: String, upiId: String) {
+        if (username.isBlank() || password.isBlank() || phonePeNum.isBlank() || upiId.isBlank()) {
+            showToast("Please fill all fields.", ToastType.ERROR)
+            return
+        }
+        prefs.edit()
+            .putString("admin_username", username.trim())
+            .putString("admin_password", password.trim())
+            .putString("admin_phonepe_number", phonePeNum.trim())
+            .putString("admin_phonepe_upi", upiId.trim())
+            .apply()
+
+        _adminUsername.value = username.trim()
+        _adminPassword.value = password.trim()
+        _adminPhonePeNumber.value = phonePeNum.trim()
+        _adminPhonePeUpi.value = upiId.trim()
+        
+        // Also update current logged in user name if applicable
+        val curr = _currentUser.value
+        if (curr != null && curr.id == -99) {
+            _currentUser.value = curr.copy(name = username.trim())
+        }
+        showToast("Space Command credentials & PhonePe settings updated!", ToastType.SUCCESS)
+    }
+
+    fun toggleAdminSubscription(subscribed: Boolean) {
+        prefs.edit().putBoolean("admin_payment_subscribed", subscribed).apply()
+        _adminPaymentSubscribed.value = subscribed
+        if (subscribed) {
+            showToast("PhonePe Payment Gateway active! Subscription VALID.", ToastType.SUCCESS)
+        } else {
+            showToast("PhonePe Payment Gateway inactive! Subscription REVOKED.", ToastType.WARNING)
         }
     }
 

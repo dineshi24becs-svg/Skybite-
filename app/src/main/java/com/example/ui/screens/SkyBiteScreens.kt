@@ -2433,6 +2433,15 @@ fun CheckoutScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
     val summary = viewModel.getCartSummary()
 
+    val adminUsername by viewModel.adminUsername.collectAsState()
+    val phonePeNumber by viewModel.adminPhonePeNumber.collectAsState()
+    val phonePeUpi by viewModel.adminPhonePeUpi.collectAsState()
+    val isSubscribed by viewModel.adminPaymentSubscribed.collectAsState()
+
+    var showPhonePeOverlay by remember { mutableStateOf(false) }
+    var phonePeStep by remember { mutableStateOf(1) } // 1 = Secure shake, 2 = Pin entry, 3 = Authorizing payment, 4 = Success
+    var phonePePin by remember { mutableStateOf("") }
+
     val bgBrush = if (isDarkMode) {
         Brush.radialGradient(colors = listOf(Color(0xFF0F1626), SkyDarkBackground))
     } else {
@@ -2538,6 +2547,7 @@ fun CheckoutScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         PaymentSelectorChip(selectedPayment == "CARD", "CARD", Icons.Default.CreditCard, "Card", isDarkMode) { selectedPayment = "CARD" }
+                        PaymentSelectorChip(selectedPayment == "PHONEPE", "PHONEPE", Icons.Default.Smartphone, "PhonePe", isDarkMode) { selectedPayment = "PHONEPE" }
                         PaymentSelectorChip(selectedPayment == "PAYPAL", "PAYPAL", Icons.Default.Payment, "PayPal", isDarkMode) { selectedPayment = "PAYPAL" }
                         PaymentSelectorChip(selectedPayment == "UPI", "UPI", Icons.Default.QrCode, "UPI / QR", isDarkMode) { selectedPayment = "UPI" }
                         PaymentSelectorChip(selectedPayment == "COD", "COD", Icons.Default.CurrencyExchange, "Cash (COD)", isDarkMode) { selectedPayment = "COD" }
@@ -2546,6 +2556,116 @@ fun CheckoutScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     Spacer(modifier = Modifier.height(16.dp))
 
                     when (selectedPayment) {
+                        "PHONEPE" -> {
+                            if (!isSubscribed) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = if (isDarkMode) Color(0x15FF5555) else Color(0x15DD0000))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFF5555), modifier = Modifier.size(32.dp))
+                                        Text(
+                                            text = "PHONEPE SERVICE SUSPENDED",
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkMode) Color(0xFFFF5555) else Color(0xFFDD0000),
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            text = "The merchant administrator has not activated or renewed their Online Payment Gateway Subscription inside Space Settings. Please contact the administrator or select a different payment method.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            } else {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF5f259f)) // PhonePe Purple
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Icon(imageVector = Icons.Default.Smartphone, contentDescription = null, tint = Color.White)
+                                                Text("PhonePe Gateway Integration", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 12.sp)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(Color.White.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("SECURE UPI", color = Color.White, fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+
+                                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+
+                                        Text(
+                                            text = "COUPLING PILOT PAYEE: ${adminUsername.uppercase()}",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Black,
+                                            color = Color(0xFF00D4AA)
+                                        )
+
+                                        Text(
+                                            text = "Your exact cart total ₹${summary.grandTotal.toInt()} will be transferred dynamically via secured PhonePe UPI.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Color.LightGray,
+                                            textAlign = TextAlign.Center
+                                        )
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // Mini QR
+                                        Box(
+                                            modifier = Modifier
+                                                .background(Color.White, RoundedCornerShape(6.dp))
+                                                .padding(8.dp)
+                                        ) {
+                                            Canvas(modifier = Modifier.size(70.dp)) {
+                                                drawRect(Color.White, size = size)
+                                                val sqSize = size.width / 10
+                                                for (i in 0..9) {
+                                                    for (j in 0..9) {
+                                                        val isAnchor = (i < 3 && j < 3) || (i > 6 && j < 3) || (i < 3 && j > 6)
+                                                        val strHash = (phonePeUpi.hashCode() + i * 17 + j * 31).let { if (it < 0) -it else it }
+                                                        val fill = if (isAnchor) true else (strHash % 2 == 0)
+                                                        if (fill) {
+                                                            drawRect(
+                                                                color = Color(0xFF5f259f),
+                                                                topLeft = Offset(i * sqSize, j * sqSize),
+                                                                size = androidx.compose.ui.geometry.Size(sqSize, sqSize)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "PhonePe: $phonePeNumber | UPI ID: $phonePeUpi",
+                                            fontSize = 10.sp,
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         "CARD" -> {
                             OutlinedTextField(
                                 value = cardName,
@@ -2691,13 +2811,270 @@ fun CheckoutScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
             }
 
             SkyBiteButton(
-                text = "CONFIRM SPACE DISPATCH",
-                onClick = { viewModel.placeOrder(address, city, pincode, phone, selectedPayment) },
+                text = if (selectedPayment == "PHONEPE") "OPEN PHONEPE & PAY ₹${summary.grandTotal.toInt()}" else "CONFIRM SPACE DISPATCH",
+                onClick = {
+                    if (address.isBlank() || city.isBlank() || pincode.isBlank() || phone.isBlank()) {
+                        viewModel.showToast("Delivery coordinates required.", ToastType.ERROR)
+                    } else if (selectedPayment == "PHONEPE" && !isSubscribed) {
+                        viewModel.showToast("PhonePe gateway suspended. Contact administrator.", ToastType.WARNING)
+                    } else if (selectedPayment == "PHONEPE") {
+                        showPhonePeOverlay = true
+                        phonePeStep = 1
+                        phonePePin = ""
+                    } else {
+                        viewModel.placeOrder(address, city, pincode, phone, selectedPayment)
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
-                icon = Icons.AutoMirrored.Filled.Launch,
+                icon = if (selectedPayment == "PHONEPE") Icons.Default.Smartphone else Icons.AutoMirrored.Filled.Launch,
                 testTag = "place_order_btn"
             )
             Spacer(modifier = Modifier.height(24.dp))
+        }
+    }
+
+    if (showPhonePeOverlay) {
+        Dialog(onDismissRequest = { showPhonePeOverlay = false }) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF2D144A)) // Deep PhonePe Purple
+            ) {
+                Column(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    // Logo Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(
+                                imageVector = Icons.Default.Smartphone,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "PhonePe",
+                                color = Color.White,
+                                fontWeight = FontWeight.Black,
+                                fontSize = 20.sp
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                                .clickable { showPhonePeOverlay = false }
+                                .padding(6.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = "Close", tint = Color.White, modifier = Modifier.size(16.dp))
+                        }
+                    }
+
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+                    when (phonePeStep) {
+                        1 -> {
+                            // Step 1: Connecting
+                            Spacer(modifier = Modifier.height(24.dp))
+                            CircularProgressIndicator(color = Color(0xFF00D4AA), modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "CONTACTING SATELLITE CORE",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Establishing secure shell with PhonePe servers...",
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.bodySmall,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            LaunchedEffect(Unit) {
+                                delay(1500)
+                                phonePeStep = 2
+                            }
+                        }
+                        2 -> {
+                            // Step 2: PIN Entry
+                            Text(
+                                text = "PAYING SECURELY",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+
+                            // Merchant details
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.08f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = adminUsername.uppercase(),
+                                        fontWeight = FontWeight.Black,
+                                        color = Color(0xFF00D4AA),
+                                        style = MaterialTheme.typography.titleMedium
+                                    )
+                                    Text(
+                                        text = "PhonePe: $phonePeNumber | UPI: $phonePeUpi",
+                                        color = Color.LightGray,
+                                        fontSize = 11.sp
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "₹${summary.grandTotal.toInt()}",
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.headlineMedium
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("ENTER 4-DIGIT UPI PIN", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+                            // PIN dots display
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                for (i in 0..3) {
+                                    val isFilled = phonePePin.length > i
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .background(
+                                                color = if (isFilled) Color.White else Color.White.copy(alpha = 0.2f),
+                                                shape = CircleShape
+                                            )
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Custom Numeric Keypad
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val keys = listOf(
+                                    listOf("1", "2", "3"),
+                                    listOf("4", "5", "6"),
+                                    listOf("7", "8", "9"),
+                                    listOf("⌫", "0", "✔")
+                                )
+
+                                keys.forEach { row ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        row.forEach { key ->
+                                            Box(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .height(48.dp)
+                                                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                                    .clickable {
+                                                        if (key == "⌫") {
+                                                            if (phonePePin.isNotEmpty()) {
+                                                                phonePePin = phonePePin.dropLast(1)
+                                                            }
+                                                        } else if (key == "✔") {
+                                                            if (phonePePin.length == 4) {
+                                                                phonePeStep = 3
+                                                            } else {
+                                                                viewModel.showToast("Please enter 4-digit PIN.", ToastType.WARNING)
+                                                            }
+                                                        } else {
+                                                            if (phonePePin.length < 4) {
+                                                                phonePePin += key
+                                                            }
+                                                        }
+                                                    },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = key,
+                                                    color = if (key == "✔") Color(0xFF00D4AA) else Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 18.sp
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        3 -> {
+                            // Step 3: Authorizing
+                            Spacer(modifier = Modifier.height(24.dp))
+                            CircularProgressIndicator(color = Color(0xFF00D4AA), modifier = Modifier.size(48.dp))
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "AUTHORIZING TRANSACTION",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Quantum validation in progress...",
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            LaunchedEffect(Unit) {
+                                delay(2000)
+                                phonePeStep = 4
+                            }
+                        }
+                        4 -> {
+                            // Step 4: Success
+                            Spacer(modifier = Modifier.height(24.dp))
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = Color(0xFF00D4AA),
+                                modifier = Modifier.size(64.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "TRANSACTION APPROVED!",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                text = "Funds securely coupled to $adminUsername",
+                                color = Color.LightGray,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(24.dp))
+
+                            LaunchedEffect(Unit) {
+                                delay(1200)
+                                showPhonePeOverlay = false
+                                viewModel.placeOrder(address, city, pincode, phone, "PHONEPE")
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -3774,20 +4151,26 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 Tab(
                     selected = currentTab == 0,
                     onClick = { currentTab = 0 },
-                    text = { Text("FLIGHT JOBS", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    text = { Text("FLIGHT JOBS", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 },
-                    text = { Text("HANGAR CATALOG", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    text = { Text("HANGAR CATALOG", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.SettingsBackupRestore, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
                 Tab(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
-                    text = { Text("USER DIRECTORY", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                    text = { Text("USER DIRECTORY", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
                     icon = { Icon(Icons.Default.Person, contentDescription = null, modifier = Modifier.size(18.dp)) }
+                )
+                Tab(
+                    selected = currentTab == 3,
+                    onClick = { currentTab = 3 },
+                    text = { Text("SPACE SETTINGS", fontWeight = FontWeight.Bold, fontSize = 11.sp) },
+                    icon = { Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp)) }
                 )
             }
 
@@ -3818,6 +4201,10 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     )
                     2 -> AdminUserDirectorySection(
                         users = allUsers,
+                        isDarkMode = isDarkMode
+                    )
+                    3 -> AdminGatewaySettingsSection(
+                        viewModel = viewModel,
                         isDarkMode = isDarkMode
                     )
                 }
@@ -4261,6 +4648,303 @@ fun AdminUserDirectorySection(
                                 fontWeight = FontWeight.Bold
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AdminGatewaySettingsSection(viewModel: AppViewModel, isDarkMode: Boolean) {
+    val adminUsername by viewModel.adminUsername.collectAsState()
+    val adminPassword by viewModel.adminPassword.collectAsState()
+    val phonePeNumber by viewModel.adminPhonePeNumber.collectAsState()
+    val phonePeUpi by viewModel.adminPhonePeUpi.collectAsState()
+    val isSubscribed by viewModel.adminPaymentSubscribed.collectAsState()
+
+    var usernameInput by remember(adminUsername) { mutableStateOf(adminUsername) }
+    var passwordInput by remember(adminPassword) { mutableStateOf(adminPassword) }
+    var phonePeInput by remember(phonePeNumber) { mutableStateOf(phonePeNumber) }
+    var upiInput by remember(phonePeUpi) { mutableStateOf(phonePeUpi) }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Subscription Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.15f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "GATEWAY SUBSCRIPTION MANAGEMENT",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "To allow cosmic customers to pay using modern PhonePe UPI or direct QR scanning, the Space Command portal requires an active subscription core.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isSubscribed) {
+                                    if (isDarkMode) Color(0x1500D4AA) else Color(0x1500A485)
+                                } else {
+                                    if (isDarkMode) Color(0x15FF5555) else Color(0x15DD0000)
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(
+                                    color = if (isSubscribed) {
+                                        if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                    } else {
+                                        if (isDarkMode) Color(0xFFFF5555) else Color(0xFFDD0000)
+                                    },
+                                    shape = CircleShape
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (isSubscribed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color.White
+                            )
+                        }
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (isSubscribed) "SUBSCRIPTION ACTIVE" else "SUBSCRIPTION INACTIVE",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isSubscribed) {
+                                    if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                } else {
+                                    if (isDarkMode) Color(0xFFFF5555) else Color(0xFFDD0000)
+                                }
+                            )
+                            Text(
+                                text = if (isSubscribed) "Clients can check out using direct PhonePe UPI" else "PhonePe checkout core is disabled for customers",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = { viewModel.toggleAdminSubscription(!isSubscribed) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isSubscribed) {
+                                if (isDarkMode) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+                            } else {
+                                if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                            },
+                            contentColor = if (isSubscribed) {
+                                if (isDarkMode) Color.White else Color.Black
+                            } else {
+                                Color.White
+                            }
+                        ),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Text(
+                            text = if (isSubscribed) "DEACTIVATE GATEWAY SUBSCRIPTION" else "ACTIVATE LOGISTICS SUBSCRIPTION (FREE DEMO)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        // Credentials & PhonePe Config Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDarkMode) SkyDarkSurfaceVariant else Color.LightGray.copy(alpha = 0.15f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "SPACE TERMINAL CONFIGURATION",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "1. Security Authentication (Your Unique Admin Name)",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = usernameInput,
+                        onValueChange = { usernameInput = it },
+                        label = { Text("Unique Admin Username") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = passwordInput,
+                        onValueChange = { passwordInput = it },
+                        label = { Text("Admin Console Password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = if (isDarkMode) Color.Gray.copy(alpha = 0.2f) else Color.LightGray.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Text(
+                        text = "2. PhonePe Payments Cargo Details",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = phonePeInput,
+                        onValueChange = { phonePeInput = it },
+                        label = { Text("PhonePe Number") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = upiInput,
+                        onValueChange = { upiInput = it },
+                        label = { Text("PhonePe UPI ID / QR Details") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = if (isDarkMode) SkyDarkAccent else SkyLightAccent
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // QR Visual Sandbox
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = if (isDarkMode) Color(0xFF1E293B) else Color.White,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "PREVIEW UPI CARGO COUPLING",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White, RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Canvas(modifier = Modifier.size(100.dp)) {
+                                drawRect(Color.White, size = size)
+                                val sqSize = size.width / 10
+                                for (i in 0..9) {
+                                    for (j in 0..9) {
+                                        val isAnchor = (i < 3 && j < 3) || (i > 6 && j < 3) || (i < 3 && j > 6)
+                                        val strHash = (upiInput.hashCode() + i * 17 + j * 31).let { if (it < 0) -it else it }
+                                        val fill = if (isAnchor) true else (strHash % 2 == 0)
+                                        if (fill) {
+                                            drawRect(
+                                                color = Color(0xFF5f259f), // PhonePe Purple
+                                                topLeft = Offset(i * sqSize, j * sqSize),
+                                                size = androidx.compose.ui.geometry.Size(sqSize, sqSize)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "PhonePe: $phonePeInput",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDarkMode) Color.White else Color.Black
+                        )
+                        Text(
+                            text = "UPI: $upiInput",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(20.dp))
+
+                    Button(
+                        onClick = {
+                            viewModel.updateAdminSettings(
+                                usernameInput,
+                                passwordInput,
+                                phonePeInput,
+                                upiInput
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                        ),
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("SAVE CONFIGURATION MODULES", fontWeight = FontWeight.Bold)
                     }
                 }
             }

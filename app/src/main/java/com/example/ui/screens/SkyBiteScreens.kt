@@ -29,6 +29,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -622,6 +623,8 @@ fun SignUpScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
     var email by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf("User") } // "User" or "Admin"
+    var hotelName by remember { mutableStateOf("") }
 
     val bgBrush = if (isDarkMode) {
         Brush.radialGradient(colors = listOf(Color(0xFF111E36), SkyDarkBackground))
@@ -666,10 +669,52 @@ fun SignUpScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     textAlign = TextAlign.Center
                 )
 
+                // Role Selector Tabs
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 20.dp)
+                        .background(
+                            color = if (isDarkMode) Color(0xFF1F2937) else Color(0xFFF3F4F6),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf("User", "Admin").forEach { role ->
+                        val isSelected = selectedRole == role
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .background(
+                                    color = if (isSelected) {
+                                        if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                    } else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { selectedRole = role }
+                                .testTag("signup_role_select_${role.lowercase()}"),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (role == "User") "CUSTOMER USER" else "SPACE ADMIN",
+                                color = if (isSelected) Color.White else {
+                                    if (isDarkMode) Color.Gray else Color.DarkGray
+                                },
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            )
+                        }
+                    }
+                }
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Full Name") },
+                    label = { Text(if (selectedRole == "Admin") "Owner / Admin Name" else "Full Name") },
                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -683,7 +728,7 @@ fun SignUpScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Quantum Email") },
+                    label = { Text(if (selectedRole == "Admin") "Admin Username / Email" else "Quantum Email") },
                     leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -706,12 +751,28 @@ fun SignUpScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                     colors = sleekTextFieldColors(isDarkMode)
                 )
 
+                if (selectedRole == "Admin") {
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = hotelName,
+                        onValueChange = { hotelName = it },
+                        label = { Text("Hotel / Restaurant Name") },
+                        leadingIcon = { Icon(Icons.Default.Restaurant, contentDescription = null) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("signup_hotel_input"),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = sleekTextFieldColors(isDarkMode)
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Access Code") },
+                    label = { Text("Access Code (Password)") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -726,7 +787,7 @@ fun SignUpScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
 
                 SkyBiteButton(
                     text = "ESTABLISH CONNECT",
-                    onClick = { viewModel.registerUser(name, email, phone, password) },
+                    onClick = { viewModel.registerUser(name, email, phone, password, selectedRole, hotelName) },
                     modifier = Modifier.fillMaxWidth(),
                     icon = Icons.Default.Engineering,
                     testTag = "signup_submit_button"
@@ -1845,6 +1906,27 @@ fun FoodGridCard(
                     overflow = TextOverflow.Ellipsis,
                     color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
                 )
+                
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.padding(vertical = 2.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Restaurant,
+                        contentDescription = null,
+                        tint = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Text(
+                        text = item.hotelName.uppercase(),
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 8.sp, fontWeight = FontWeight.Bold),
+                        color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
                 Text(
                     text = item.description,
                     style = MaterialTheme.typography.labelSmall,
@@ -3139,6 +3221,9 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
     val status by viewModel.droneStatus.collectAsState()
     val secondsLeft by viewModel.deliverySecondsRemaining.collectAsState()
     val droneGps by viewModel.droneGps.collectAsState()
+    val shortestPathNodes by viewModel.shortestPathNodes.collectAsState()
+    val heavyTraffic by viewModel.heavyTrafficRoutingMode.collectAsState()
+    val hotelName = viewModel.getActiveOrderHotelName()
 
     val bgBrush = if (isDarkMode) {
         Brush.radialGradient(colors = listOf(Color(0xFF0F1626), SkyDarkBackground))
@@ -3177,7 +3262,14 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 colors = CardDefaults.cardColors(containerColor = Color.Black)
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
-                    TelemetryCanvasMap(progress)
+                    TelemetryCanvasMap(
+                        progress = progress,
+                        shortestPathNodes = shortestPathNodes,
+                        heavyTraffic = heavyTraffic,
+                        hotelName = hotelName,
+                        customerAddress = activeOrder?.deliveryAddress ?: "Sector 7 Hangar",
+                        isDarkMode = isDarkMode
+                    )
 
                     // Overlay metrics
                     Column(
@@ -3275,6 +3367,293 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 }
             }
 
+            // Secure Delivery Handover Verification Card
+            if (activeOrder != null) {
+                val orderId = activeOrder!!.id
+                val correctOtp = viewModel.getDeliveryOtp(orderId)
+                val submittedOtps by viewModel.orderOtpsSubmitted.collectAsState()
+                val userSubmittedOtp = submittedOtps[orderId] ?: ""
+                val isMatched = userSubmittedOtp == correctOtp
+
+                var otpInputText by remember(orderId) { mutableStateOf("") }
+
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 16.dp)
+                        .glassmorphicBorder(isDarkMode, 24f)
+                        .testTag("delivery_otp_card"),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isDarkMode) SkyDarkSurface.copy(alpha = 0.85f) else Color.White
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isMatched || status == "Delivered") Icons.Default.LockOpen else Icons.Default.Lock,
+                                contentDescription = "Lock",
+                                tint = if (isMatched || status == "Delivered") Color(0xFF00D4AA) else Color(0xFFFF6B35),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = "Secure Cargo Handover Verification",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "To unlock the drone's molecular cargo compartment upon landing, retrieve your unique verification pin below and transmit it to Space Command.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // High-contrast security pin box
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isDarkMode) Color(0xFF1E293B) else Color(0xFFF1F5F9))
+                                .border(1.dp, if (isDarkMode) Color(0x30FFFFFF) else Color(0x15000000), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "YOUR DELIVERY VERIFICATION OTP",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 1.sp
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = correctOtp,
+                                    style = MaterialTheme.typography.headlineMedium,
+                                    fontWeight = FontWeight.Black,
+                                    color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                                    letterSpacing = 4.sp
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (status != "Delivered") {
+                            OutlinedTextField(
+                                value = otpInputText,
+                                onValueChange = {
+                                    if (it.length <= 4 && it.all { char -> char.isDigit() }) {
+                                        otpInputText = it
+                                    }
+                                },
+                                label = { Text("Enter 4-Digit Verification OTP") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("otp_input_field"),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Button(
+                                onClick = {
+                                    if (otpInputText.length == 4) {
+                                        viewModel.submitDeliveryOtp(orderId, otpInputText)
+                                    } else {
+                                        viewModel.showToast("Please enter a valid 4-digit OTP", ToastType.ERROR)
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(48.dp)
+                                    .testTag("submit_otp_button"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                ),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    text = "TRANSMIT HANDSHAKE PIN",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            // Match status indicator
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isMatched) Icons.Default.CheckCircle else Icons.Default.Cancel,
+                                    contentDescription = null,
+                                    tint = if (isMatched) Color(0xFF00D4AA) else Color(0xFFFF6B35).copy(alpha = 0.7f),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (isMatched) "✓ SECURE LOCK RELEASED. Awaiting Admin confirmation." else "✗ SECURE LOCK ACTIVE. Enter correct OTP.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isMatched) Color(0xFF00D4AA) else Color(0xFFFF6B35).copy(alpha = 0.7f)
+                                )
+                            }
+                        } else {
+                            // Already Delivered
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0x1500D4AA))
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF00D4AA),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "SECURE HANDOVER COMPLETE! cargo disengaged.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF00D4AA)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Interactive Dijkstra Router Settings Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 16.dp)
+                    .glassmorphicBorder(isDarkMode, 16f),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = if (isDarkMode) SkyDarkSurface else Color.White)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Quantum Router (Dijkstra's Shortest Path)",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Plots optimal delivery course between the food prep hotel and your entered coordinates. Shortest path is dynamically calculated using active airway congestion factors.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = if (heavyTraffic) "STORM BYPASS ROUTING ACTIVATED" else "DIRECT SKY CORRIDOR ROUTING",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (heavyTraffic) Color(0xFFFF6B35) else Color(0xFF00D4AA)
+                            )
+                            Text(
+                                text = if (heavyTraffic) "Heavy ion-storm detected. Re-routing around magnetic obstacles." else "Atmospheric interference clear. Optimal straightway channels locked.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                            )
+                        }
+                        
+                        Switch(
+                            checked = heavyTraffic,
+                            onCheckedChange = { viewModel.toggleHeavyTrafficMode() },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color(0xFF00D4AA),
+                                checkedTrackColor = Color(0x5000D4AA)
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = (if (isDarkMode) Color.White else Color.Black).copy(alpha = 0.12f))
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "RESOLVED ACTIVE WAYPOINTS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Display nodes along the shortest path
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        shortestPathNodes.forEachIndexed { index, node ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background((if (isDarkMode) Color(0xFF0F172A) else Color(0xFFF1F5F9)))
+                                    .border(
+                                        width = 1.dp,
+                                        color = if (index == 0) Color(0xFF00D4AA) else if (index == shortestPathNodes.size - 1) Color(0xFFFF6B35) else Color.Transparent,
+                                        shape = RoundedCornerShape(8.dp)
+                                    )
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Text(
+                                        text = if (index == 0) "START" else if (index == shortestPathNodes.size - 1) "END" else "WAYPOINT ${index}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontSize = 8.sp,
+                                        color = if (index == 0) Color(0xFF00D4AA) else if (index == shortestPathNodes.size - 1) Color(0xFFFF6B35) else Color.Gray
+                                    )
+                                    Text(
+                                        text = if (index == 0) hotelName.split(" ").firstOrNull() ?: node.name else node.name,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkMode) Color.White else Color.Black
+                                    )
+                                }
+                            }
+
+                            if (index < shortestPathNodes.size - 1) {
+                                Icon(
+                                    imageVector = Icons.Default.ArrowForward,
+                                    contentDescription = "to",
+                                    tint = if (isDarkMode) Color.DarkGray else Color.LightGray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // Status timeline
             Card(
                 modifier = Modifier
@@ -3351,115 +3730,301 @@ fun TrackingScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
             Spacer(modifier = Modifier.height(24.dp))
         }
     }
+
+    val oneMinuteAlert by viewModel.oneMinuteNotificationAlert.collectAsState()
+    if (oneMinuteAlert != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissOneMinuteAlert() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Alert",
+                        tint = Color(0xFFFF6B35),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("DRONE 1-MINUTE AWAY!", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(oneMinuteAlert ?: "")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissOneMinuteAlert() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00D4AA))
+                ) {
+                    Text("OK, ACKNOWLEDGED", color = Color.White)
+                }
+            }
+        )
+    }
 }
 
-// Stunning Custom Radar Mapping Canvas
+// Stunning Custom Radar Mapping Canvas with Shortest Path Dijkstra Visualizer
 @Composable
-fun TelemetryCanvasMap(progress: Float) {
+fun TelemetryCanvasMap(
+    progress: Float,
+    shortestPathNodes: List<MapNode>,
+    heavyTraffic: Boolean,
+    hotelName: String,
+    customerAddress: String,
+    isDarkMode: Boolean
+) {
     val infiniteTransition = rememberInfiniteTransition(label = "radar")
     val sweepAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2500, easing = LinearEasing),
+            animation = tween(4000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "sweep"
     )
+
+    // Animated rotor blade angle for the drone icon
+    val rotorAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotor_spin"
+    )
+
+    val paintStartText = remember(isDarkMode) {
+        android.graphics.Paint().apply {
+            color = if (isDarkMode) 0xFF00D4AA.toInt() else 0xFF00A485.toInt()
+            textSize = 24f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+        }
+    }
+
+    val paintEndText = remember(isDarkMode) {
+        android.graphics.Paint().apply {
+            color = if (isDarkMode) 0xFFFF6B35.toInt() else 0xFFD84B16.toInt()
+            textSize = 24f
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+        }
+    }
+
+    val paintWaypointText = remember(isDarkMode) {
+        android.graphics.Paint().apply {
+            color = if (isDarkMode) 0x90FFFFFF.toInt() else 0x90000000.toInt()
+            textSize = 18f
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+    }
 
     Canvas(modifier = Modifier.fillMaxSize()) {
         val width = size.width
         val height = size.height
         val center = Offset(width / 2, height / 2)
 
-        // Draw radar grids
+        // Helper function to map path coordinates (percentages) to actual pixel bounds
+        fun getCanvasOffset(nodeX: Float, nodeY: Float): Offset {
+            return Offset(nodeX / 100f * width, nodeY / 100f * height)
+        }
+
+        // Draw tactical radar grids
         for (i in 1..4) {
             drawCircle(
-                color = Color(0x1000D4AA),
+                color = if (isDarkMode) Color(0x0F00D4AA) else Color(0x0C00A485),
                 radius = (width / 7) * i,
-                style = Stroke(width = 2f)
+                style = Stroke(width = 1.5f)
             )
         }
 
-        // Radar coordinates axes lines
-        drawLine(Color(0x1500D4AA), start = Offset(0f, height/2), end = Offset(width, height/2), strokeWidth = 1f)
-        drawLine(Color(0x1500D4AA), start = Offset(width/2, 0f), end = Offset(width/2, height), strokeWidth = 1f)
+        // Axis crosshairs
+        drawLine(
+            color = if (isDarkMode) Color(0x1000D4AA) else Color(0x0A00A485),
+            start = Offset(0f, height / 2),
+            end = Offset(width, height / 2),
+            strokeWidth = 1f
+        )
+        drawLine(
+            color = if (isDarkMode) Color(0x1000D4AA) else Color(0x0A00A485),
+            start = Offset(width / 2, 0f),
+            end = Offset(width / 2, height),
+            strokeWidth = 1f
+        )
 
-        // Radar Sweep Green Gradient Cone
+        // Radar Sweep Scanner Line
         val sweepRad = Math.toRadians(sweepAngle.toDouble())
         val sweepEndX = center.x + (width / 2) * cos(sweepRad).toFloat()
         val sweepEndY = center.y + (width / 2) * sin(sweepRad).toFloat()
         drawLine(
-            color = Color(0x6000D4AA),
+            color = if (isDarkMode) Color(0x4000D4AA) else Color(0x2500A485),
             start = center,
             end = Offset(sweepEndX, sweepEndY),
-            strokeWidth = 4f
+            strokeWidth = 2f
         )
 
-        // Flight route coordinates (Restaurant to Customer)
-        val routeStart = Offset(width * 0.15f, height * 0.8f)
-        val routeEnd = Offset(width * 0.85f, height * 0.2f)
+        // Draw ALL possible sky lanes (streets/graph edges) in a low-opacity tactical blue
+        val allEdges = PathFinder.getEdges(heavyTraffic)
+        allEdges.forEach { edge ->
+            val fromNode = PathFinder.nodes.find { it.id == edge.fromNodeId }
+            val toNode = PathFinder.nodes.find { it.id == edge.toNodeId }
+            if (fromNode != null && toNode != null) {
+                val p1 = getCanvasOffset(fromNode.xPercent, fromNode.yPercent)
+                val p2 = getCanvasOffset(toNode.xPercent, toNode.yPercent)
+                // Draw thin street lines
+                drawLine(
+                    color = if (isDarkMode) Color(0x1F475569) else Color(0x1F94A3B8),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 3f,
+                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(15f, 15f))
+                )
+            }
+        }
 
-        // Draw flight route dotted path
-        drawLine(
-            color = Color(0x30FFFFFF),
-            start = routeStart,
-            end = routeEnd,
-            strokeWidth = 3f,
-            pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
-        )
+        // Highlight the optimal SHORTEST PATH (Dijkstra) in glowing green/cyan
+        if (shortestPathNodes.size > 1) {
+            for (i in 0 until shortestPathNodes.size - 1) {
+                val n1 = shortestPathNodes[i]
+                val n2 = shortestPathNodes[i + 1]
+                val p1 = getCanvasOffset(n1.xPercent, n1.yPercent)
+                val p2 = getCanvasOffset(n2.xPercent, n2.yPercent)
 
-        // Dynamic Drone Coordinate on Route
-        val droneX = routeStart.x + (routeEnd.x - routeStart.x) * progress
-        val droneY = routeStart.y + (routeEnd.y - routeStart.y) * progress
-        val dronePos = Offset(droneX, droneY)
+                // Thick neon route line
+                drawLine(
+                    color = if (isDarkMode) Color(0x5000D4AA) else Color(0x6000A485),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 8f
+                )
+                drawLine(
+                    color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                    start = p1,
+                    end = p2,
+                    strokeWidth = 3f
+                )
+            }
+        }
 
-        // Draw Restaurant Dot
+        // Draw intersection nodes/waypoints as tactical dots
+        PathFinder.nodes.forEach { node ->
+            if (node.id != "HOTEL" && node.id != "CUSTOMER") {
+                val pos = getCanvasOffset(node.xPercent, node.yPercent)
+                drawCircle(
+                    color = if (isDarkMode) Color(0x80334155) else Color(0x80CBD5E1),
+                    radius = 6f,
+                    center = pos
+                )
+                // Label each intersection
+                drawContext.canvas.nativeCanvas.drawText(
+                    node.name.uppercase(),
+                    pos.x,
+                    pos.y - 12f,
+                    paintWaypointText
+                )
+            }
+        }
+
+        // Draw Starting Hangar (Hotel)
+        val startNode = PathFinder.nodes.first()
+        val startPos = getCanvasOffset(startNode.xPercent, startNode.yPercent)
         drawCircle(
-            color = Color(0xFF00D4AA),
+            color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
             radius = 12f,
-            center = routeStart
+            center = startPos
         )
         drawCircle(
-            color = Color(0xFF00D4AA),
-            radius = 24f,
-            center = routeStart,
+            color = if (isDarkMode) Color(0x4000D4AA) else Color(0x3000A485),
+            radius = 22f,
+            center = startPos,
             style = Stroke(width = 2f)
         )
+        // Draw Starting Text label
+        drawContext.canvas.nativeCanvas.drawText(
+            "HOTEL: " + hotelName.uppercase().take(22) + " (START)",
+            startPos.x,
+            startPos.y + 32f,
+            paintStartText
+        )
 
-        // Draw Customer Hangar Dot
+        // Draw Customer Hangar (Delivery Address)
+        val endNode = PathFinder.nodes.last()
+        val endPos = getCanvasOffset(endNode.xPercent, endNode.yPercent)
         drawCircle(
             color = Color(0xFFFF6B35),
             radius = 12f,
-            center = routeEnd
+            center = endPos
         )
-        // Pulsing radar ring on customer
-        val pulseRadius = 24f + (16f * sin((System.currentTimeMillis() % 1000) / 1000f * 2 * Math.PI).toFloat())
+        // Pulsing radar target marker
+        val pulseRadius = 24f + (14f * sin((System.currentTimeMillis() % 1000) / 1000f * 2 * Math.PI).toFloat())
         drawCircle(
-            color = Color(0x50FF6B35),
+            color = Color(0x40FF6B35),
             radius = pulseRadius,
-            center = routeEnd,
+            center = endPos,
             style = Stroke(width = 2f)
         )
+        // Draw Customer Text label
+        val formattedAddr = customerAddress.replace(", Bangalore", "").replace(", India", "")
+        drawContext.canvas.nativeCanvas.drawText(
+            "DROP: " + formattedAddr.uppercase().take(28),
+            endPos.x,
+            endPos.y - 24f,
+            paintEndText
+        )
 
-        // Draw Drone Vector Icon / Dot
+        // Calculate and Draw the Drone moving smoothly along the Dijkstra shortest path nodes
+        val dronePosPair = PathFinder.getPositionOnPath(shortestPathNodes, progress)
+        val dronePos = getCanvasOffset(dronePosPair.first, dronePosPair.second)
+
+        // Draw Drone Body (Central micro-chip or core)
         drawCircle(
             color = Color.White,
             radius = 14f,
             center = dronePos
         )
         drawCircle(
-            color = Color(0xFFFF6B35),
+            color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
             radius = 8f,
             center = dronePos
         )
-        // Draw drone halo
         drawCircle(
-            color = Color(0x40FFFFFF),
-            radius = 22f,
+            color = if (isDarkMode) Color(0x4000D4AA) else Color(0x3000A485),
+            radius = 24f,
             center = dronePos,
-            style = Stroke(width = 3f)
+            style = Stroke(width = 2f)
         )
+
+        // Draw 4 Rotating Quadcopter Rotors!
+        val rotorDistance = 24f
+        val radAngle = Math.toRadians(rotorAngle.toDouble())
+        val cosA = cos(radAngle).toFloat()
+        val sinA = sin(radAngle).toFloat()
+
+        // 4 Rotor arms angles: 45, 135, 225, 315
+        val angles = listOf(45.0, 135.0, 225.0, 315.0)
+        angles.forEach { angle ->
+            val armRad = Math.toRadians(angle)
+            val armEndX = dronePos.x + rotorDistance * cos(armRad).toFloat()
+            val armEndY = dronePos.y + rotorDistance * sin(armRad).toFloat()
+            val armPos = Offset(armEndX, armEndY)
+
+            // Arm connection line
+            drawLine(
+                color = Color.White.copy(alpha = 0.6f),
+                start = dronePos,
+                end = armPos,
+                strokeWidth = 2f
+            )
+
+            // Rotor blade line 1 (rotated dynamically)
+            val bladeLength = 10f
+            val b1 = Offset(armPos.x + bladeLength * cosA, armPos.y + bladeLength * sinA)
+            val b2 = Offset(armPos.x - bladeLength * cosA, armPos.y - bladeLength * sinA)
+            drawLine(
+                color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485),
+                start = b1,
+                end = b2,
+                strokeWidth = 3f
+            )
+        }
     }
 }
 
@@ -4033,6 +4598,38 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
     val orderHistory by viewModel.orderHistory.collectAsState()
     val allUsers by viewModel.allUsers.collectAsState()
     val foodItems by viewModel.allFoodItemsFlow.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+
+    val adminHotel = currentUser?.hotelName ?: "SkyBite Central Hangar"
+    val isSuperAdmin = currentUser?.id == -99
+
+    // Filter food items and orders specifically for this admin's hotel
+    val filteredFoodItems = remember(foodItems, adminHotel, isSuperAdmin) {
+        if (isSuperAdmin) {
+            foodItems
+        } else {
+            foodItems.filter { it.hotelName == adminHotel }
+        }
+    }
+
+    val filteredOrders = remember(orderHistory, adminHotel, isSuperAdmin, foodItems) {
+        if (isSuperAdmin) {
+            orderHistory
+        } else {
+            orderHistory.filter { order ->
+                val itemPairs = order.itemsJson.split(",").mapNotNull {
+                    val parts = it.split(":")
+                    if (parts.size == 2) {
+                        val itemId = parts[0].toIntOrNull()
+                        if (itemId != null) {
+                            foodItems.find { item -> item.id == itemId }
+                        } else null
+                    } else null
+                }
+                itemPairs.any { it?.hotelName == adminHotel }
+            }
+        }
+    }
     
     var currentTab by remember { mutableStateOf(0) } // 0 = Flight Jobs, 1 = Hangar Catalog, 2 = User Directory
     
@@ -4077,9 +4674,10 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                         color = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
                     )
                     Text(
-                        text = "Quantum Drone Logistics Dashboard",
+                        text = "Quantum Drone Logistics Terminal: $adminHotel",
                         style = MaterialTheme.typography.bodySmall,
-                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
@@ -4110,7 +4708,7 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 // Stat 1: Total Revenue
-                val totalRevenue = orderHistory.sumOf { it.totalAmount }
+                val totalRevenue = filteredOrders.sumOf { it.totalAmount }
                 AdminStatCard(
                     title = "REVENUE PAYLOAD",
                     value = "₹${totalRevenue.toInt()}",
@@ -4123,7 +4721,7 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 // Stat 2: Active Drones (Flight Logs)
                 AdminStatCard(
                     title = "FLIGHT LOGS",
-                    value = "${orderHistory.size}",
+                    value = "${filteredOrders.size}",
                     icon = Icons.Default.RocketLaunch,
                     color = Color(0xFFFFA500),
                     isDarkMode = isDarkMode,
@@ -4178,13 +4776,13 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
             Box(modifier = Modifier.weight(1f)) {
                 when (currentTab) {
                     0 -> AdminFlightJobsSection(
-                        orders = orderHistory,
+                        orders = filteredOrders,
                         onUpdateStatus = { id, status -> viewModel.updateOrderStatus(id, status) },
                         isDarkMode = isDarkMode,
                         viewModel = viewModel
                     )
                     1 -> AdminHangarCatalogSection(
-                        foodItems = foodItems,
+                        foodItems = filteredFoodItems,
                         onAddItem = { name, price, desc, cat, img -> viewModel.addNewFoodItem(name, price, desc, cat, img) },
                         onDeleteItem = { id -> viewModel.deleteFoodItem(id) },
                         newName = newName,
@@ -4210,6 +4808,35 @@ fun AdminDashboardScreen(viewModel: AppViewModel, isDarkMode: Boolean) {
                 }
             }
         }
+    }
+
+    val adminAlert by viewModel.adminNotificationAlert.collectAsState()
+    if (adminAlert != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissAdminNotificationAlert() },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.RocketLaunch,
+                        contentDescription = "Calling alert",
+                        tint = Color(0xFF00D4AA),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text("SYSTEM RADAR CALL!", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Text(adminAlert ?: "")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.dismissAdminNotificationAlert() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00D4AA))
+                ) {
+                    Text("ACKNOWLEDGE INCOMING FEED", color = Color.White)
+                }
+            }
+        )
     }
 }
 
@@ -4351,6 +4978,100 @@ fun AdminFlightJobsSection(
                         Spacer(modifier = Modifier.height(12.dp))
                         HorizontalDivider(color = if (isDarkMode) Color.Gray.copy(alpha = 0.2f) else Color.LightGray.copy(alpha = 0.5f))
                         Spacer(modifier = Modifier.height(12.dp))
+
+                        // Secure harbor protocol (OTP status)
+                        val submittedOtps by viewModel.orderOtpsSubmitted.collectAsState()
+                        val userOtp = submittedOtps[order.id]
+                        val correctOtp = viewModel.getDeliveryOtp(order.id)
+                        val isOtpMatched = userOtp == correctOtp
+
+                        if (order.status != "Delivered") {
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = (if (isDarkMode) Color(0xFF0F172A) else Color(0xFFF1F5F9)).copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        1.dp,
+                                        if (isOtpMatched) Color(0xFF00D4AA).copy(alpha = 0.4f) else Color(0xFFFF6B35).copy(alpha = 0.2f),
+                                        RoundedCornerShape(8.dp)
+                                    )
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isOtpMatched) Icons.Default.LockOpen else Icons.Default.Lock,
+                                            contentDescription = null,
+                                            tint = if (isOtpMatched) Color(0xFF00D4AA) else Color(0xFFFF6B35),
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Text(
+                                            text = "SECURE HARBOR PROTOCOL",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDarkMode) SkyDarkTextPrimary else SkyLightTextPrimary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Required Target PIN: $correctOtp",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary
+                                    )
+                                    Text(
+                                        text = "Customer Transmitted PIN: ${userOtp ?: "Awaiting input..."}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isOtpMatched) Color(0xFF00D4AA) else (if (isDarkMode) SkyDarkTextSecondary else SkyLightTextSecondary)
+                                    )
+                                    if (isOtpMatched) {
+                                        Text(
+                                            text = "✓ Handshake PIN verified. Ready to authorize drop off.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF00D4AA)
+                                        )
+                                    } else {
+                                        // Allow Admin to enter the OTP manually as a fallback call
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                                        ) {
+                                            var manualOtp by remember(order.id) { mutableStateOf("") }
+                                            OutlinedTextField(
+                                                value = manualOtp,
+                                                onValueChange = { if (it.length <= 4) manualOtp = it },
+                                                label = { Text("Manual PIN override", fontSize = 9.sp) },
+                                                modifier = Modifier.weight(1f).height(48.dp),
+                                                textStyle = MaterialTheme.typography.bodySmall,
+                                                singleLine = true
+                                            )
+                                            Button(
+                                                onClick = {
+                                                    if (manualOtp == correctOtp) {
+                                                        viewModel.submitDeliveryOtp(order.id, manualOtp)
+                                                    } else {
+                                                        viewModel.showToast("Manual override failed: Pin mismatch.", ToastType.ERROR)
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)),
+                                                shape = RoundedCornerShape(4.dp),
+                                                modifier = Modifier.height(34.dp)
+                                            ) {
+                                                Text("Verify", fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         // Admin actions
                         Text(

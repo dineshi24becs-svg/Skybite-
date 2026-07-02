@@ -10,7 +10,9 @@ data class UserEntity(
     val email: String,
     val phone: String,
     val name: String,
-    val passwordHash: String
+    val passwordHash: String,
+    val role: String = "User", // "User" or "Admin"
+    val hotelName: String? = null
 )
 
 @Entity(tableName = "cart_items")
@@ -57,7 +59,8 @@ data class FoodItemEntity(
     val isPopular: Boolean = false,
     val isAiRecommended: Boolean = false,
     val rating: Double = 4.5,
-    val deliveryTimeMin: Int = 25
+    val deliveryTimeMin: Int = 25,
+    val hotelName: String = "SkyBite Hangar"
 )
 
 fun FoodItemEntity.toDomainModel() = FoodItem(
@@ -71,7 +74,8 @@ fun FoodItemEntity.toDomainModel() = FoodItem(
     isPopular = isPopular,
     isAiRecommended = isAiRecommended,
     rating = rating,
-    deliveryTimeMin = deliveryTimeMin
+    deliveryTimeMin = deliveryTimeMin,
+    hotelName = hotelName
 )
 
 fun FoodItem.toEntity() = FoodItemEntity(
@@ -85,7 +89,8 @@ fun FoodItem.toEntity() = FoodItemEntity(
     isPopular = isPopular,
     isAiRecommended = isAiRecommended,
     rating = rating,
-    deliveryTimeMin = deliveryTimeMin
+    deliveryTimeMin = deliveryTimeMin,
+    hotelName = hotelName
 )
 
 @Dao
@@ -166,7 +171,7 @@ interface AppDao {
         ReviewEntity::class,
         FoodItemEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

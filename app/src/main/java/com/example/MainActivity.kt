@@ -22,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
 import com.example.ui.screens.*
 import com.example.ui.theme.SkyBiteTheme
 import com.example.ui.viewmodel.AppViewModel
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
             val showOtpVerifyDialog by viewModel.showOtpVerifyDialog.collectAsState()
             val isListeningVoice by viewModel.isListeningVoice.collectAsState()
             val postDeliveryReviewFoodId by viewModel.showReviewFormForCompletedOrder.collectAsState()
+            val showDeliveredDialog by viewModel.showDeliveredDialog.collectAsState()
 
             val cartCount = cartDisplayItems.sumOf { it.quantity }
 
@@ -161,6 +163,57 @@ class MainActivity : ComponentActivity() {
 
                     postDeliveryReviewFoodId?.let { foodId ->
                         PostDeliveryReviewDialog(foodId = foodId, viewModel = viewModel, isDarkMode = isDarkMode)
+                    }
+
+                    showDeliveredDialog?.let { order ->
+                        AlertDialog(
+                            onDismissRequest = { viewModel.dismissDeliveredDialog() },
+                            title = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ShoppingCart,
+                                        contentDescription = null,
+                                        tint = Color(0xFF00D4AA),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Text(
+                                        text = "DELIVERY SUCCESSFUL!",
+                                        fontWeight = FontWeight.Black,
+                                        style = MaterialTheme.typography.titleLarge
+                                    )
+                                }
+                            },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text(
+                                        text = "Pilot, your cargo delivery for Order #${order.id} has landed successfully!",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = "The drone has dropped your hot fresh meal safely in your designated landing area. Thank you for choosing SkyBite logistics!",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isDarkMode) Color.LightGray else Color.DarkGray
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    onClick = { viewModel.dismissDeliveredDialog() },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isDarkMode) Color(0xFF00D4AA) else Color(0xFF00A485)
+                                    ),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("CONFIRM DECK SECURED", color = Color.White, fontWeight = FontWeight.Bold)
+                                }
+                            },
+                            shape = RoundedCornerShape(24.dp),
+                            containerColor = if (isDarkMode) Color(0xFF1E293B) else Color.White
+                        )
                     }
                 }
             }

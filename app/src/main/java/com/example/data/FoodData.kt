@@ -16,7 +16,8 @@ data class FoodItem(
     val isPopular: Boolean = false,
     val isAiRecommended: Boolean = false,
     val rating: Double = 4.5,
-    val deliveryTimeMin: Int = 25
+    val deliveryTimeMin: Int = 25,
+    val hotelName: String = "SkyBite Central Hangar"
 )
 
 object FoodData {

@@ -134,6 +134,36 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeTrackedOrder = MutableStateFlow<OrderHistoryEntity?>(null)
     val activeTrackedOrder: StateFlow<OrderHistoryEntity?> = _activeTrackedOrder.asStateFlow()
 
+    private val _heavyTrafficRoutingMode = MutableStateFlow(false)
+    val heavyTrafficRoutingMode: StateFlow<Boolean> = _heavyTrafficRoutingMode.asStateFlow()
+
+    val shortestPathNodes: StateFlow<List<MapNode>> = _heavyTrafficRoutingMode.map { heavy ->
+        PathFinder.findShortestPath(startId = "HOTEL", endId = "CUSTOMER", heavyTraffic = heavy)
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        PathFinder.findShortestPath(startId = "HOTEL", endId = "CUSTOMER", heavyTraffic = false)
+    )
+
+    fun toggleHeavyTrafficMode() {
+        _heavyTrafficRoutingMode.value = !_heavyTrafficRoutingMode.value
+        val modeText = if (_heavyTrafficRoutingMode.value) "Heavy Strom/Congestion Routing Mode Active" else "Standard Stratospheric Clear Route Active"
+        showToast("Dijkstra recalculated: $modeText", ToastType.SUCCESS)
+    }
+
+    fun getActiveOrderHotelName(): String {
+        val active = _activeTrackedOrder.value ?: return "SkyBite Central Hangar"
+        val firstFoodId = active.itemsJson.split(",").firstOrNull()?.split(":")?.firstOrNull()?.toIntOrNull()
+        if (firstFoodId != null) {
+            val items = _allFoodItems.value
+            val match = items.find { it.id == firstFoodId }
+            if (match != null) {
+                return match.hotelName
+            }
+        }
+        return "SkyBite Central Hangar"
+    }
+
     private val _droneProgress = MutableStateFlow(0.0f) // 0.0f to 1.0f
     val droneProgress: StateFlow<Float> = _droneProgress.asStateFlow()
 
@@ -158,6 +188,81 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _showReviewFormForCompletedOrder = MutableStateFlow<Int?>(null) // stores foodId to review
     val showReviewFormForCompletedOrder: StateFlow<Int?> = _showReviewFormForCompletedOrder.asStateFlow()
+
+    private val _showDeliveredDialog = MutableStateFlow<OrderHistoryEntity?>(null)
+    val showDeliveredDialog: StateFlow<OrderHistoryEntity?> = _showDeliveredDialog.asStateFlow()
+
+    fun dismissDeliveredDialog() {
+        _showDeliveredDialog.value = null
+    }
+
+    // --- Secure OTP Delivery & System Alerts ---
+    private val _orderOtpsSubmitted = MutableStateFlow<Map<Int, String>>(emptyMap())
+    val orderOtpsSubmitted: StateFlow<Map<Int, String>> = _orderOtpsSubmitted.asStateFlow()
+
+    private val _oneMinuteNotificationAlert = MutableStateFlow<String?>(null)
+    val oneMinuteNotificationAlert: StateFlow<String?> = _oneMinuteNotificationAlert.asStateFlow()
+
+    private val _adminNotificationAlert = MutableStateFlow<String?>(null)
+    val adminNotificationAlert: StateFlow<String?> = _adminNotificationAlert.asStateFlow()
+
+    fun dismissOneMinuteAlert() {
+        _oneMinuteNotificationAlert.value = null
+    }
+
+    fun dismissAdminNotificationAlert() {
+        _adminNotificationAlert.value = null
+    }
+
+    fun getDeliveryOtp(orderId: Int): String {
+        val hash = (orderId * 179 + 4823) % 9000 + 1000
+        return hash.toString()
+    }
+
+    fun submitDeliveryOtp(orderId: Int, otp: String) {
+        val current = _orderOtpsSubmitted.value.toMutableMap()
+        current[orderId] = otp
+        _orderOtpsSubmitted.value = current
+        
+        val correctOtp = getDeliveryOtp(orderId)
+        if (otp == correctOtp) {
+            showToast("Secure handshake complete! OTP matched.", ToastType.SUCCESS)
+        } else {
+            showToast("Security lockout active: Invalid OTP code '$otp'. Try again.", ToastType.ERROR)
+        }
+    }
+
+    fun sendSystemPushNotification(title: String, message: String) {
+        val context = getApplication<Application>()
+        val channelId = "skybite_delivery_channel"
+        val notificationId = (System.currentTimeMillis() % 100000).toInt()
+
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                channelId,
+                "SkyBite Cargo Tracking",
+                android.app.NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Real-time updates of drone air-routes"
+            }
+            notificationManager.createNotificationChannel(channel)
+        }
+
+        val builder = androidx.core.app.NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+
+        try {
+            notificationManager.notify(notificationId, builder.build())
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     // Voice Search Mocks
     private val _isListeningVoice = MutableStateFlow(false)
@@ -208,6 +313,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         
                         if (latest.status == "Delivered") {
                             trackingJob?.cancel()
+                            _showDeliveredDialog.value = latest
                             showToast("Delivery dropped! Landing successful.", ToastType.SUCCESS)
                             val firstFoodId = latest.itemsJson.split(",").firstOrNull()?.split(":")?.firstOrNull()?.toIntOrNull()
                             if (firstFoodId != null) {
@@ -272,9 +378,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // --- Authentication System ---
-    fun registerUser(name: String, email: String, phone: String, password: String) {
+    fun registerUser(name: String, email: String, phone: String, password: String, role: String = "User", hotelName: String? = null) {
         if (name.isBlank() || email.isBlank() || phone.isBlank() || password.isBlank()) {
             showToast("Please fill all details.", ToastType.ERROR)
+            return
+        }
+        if (role == "Admin" && (hotelName == null || hotelName.isBlank())) {
+            showToast("Hotel name is required for Admin registration.", ToastType.ERROR)
             return
         }
         viewModelScope.launch {
@@ -287,7 +397,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 email = email,
                 phone = phone,
                 name = name,
-                passwordHash = password // Secure hashing mock
+                passwordHash = password, // Secure hashing mock
+                role = role,
+                hotelName = if (role == "Admin") hotelName else null
             )
             // Save temp user for OTP verification
             _otpTempUser.value = newUser
@@ -331,10 +443,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     val loggedUser = appDao.getUserByEmail(user.email)
                     _currentUser.value = loggedUser
-                    _currentUserRole.value = "User"
+                    _currentUserRole.value = loggedUser?.role ?: "User"
                     _otpTempUser.value = null
                     showToast("Welcome back, ${loggedUser?.name ?: "Pilot"}!", ToastType.SUCCESS)
-                    _currentScreen.value = Screen.HOME
+                    if (loggedUser?.role == "Admin") {
+                        _currentScreen.value = Screen.ADMIN_DASHBOARD
+                    } else {
+                        _currentScreen.value = Screen.HOME
+                    }
                 }
             }
         } else {
@@ -368,18 +484,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 email = "admin@skybite.com",
                 phone = "000-000-0000",
                 name = adminName,
-                passwordHash = customPass
+                passwordHash = customPass,
+                role = "Admin",
+                hotelName = "SkyBite Central Hangar"
             )
             _currentUserRole.value = "Admin"
             _currentScreen.value = Screen.ADMIN_DASHBOARD
         } else {
             viewModelScope.launch {
                 val user = appDao.getUserByEmail(cleanEmail)
-                if (user != null && user.passwordHash == passwordText && (cleanEmail.contains("admin") || user.name.lowercase().contains("admin"))) {
-                    showToast("Admin credentials matched. Opening Space Command...", ToastType.SUCCESS)
+                if (user != null && user.passwordHash == passwordText && user.role == "Admin") {
+                    showToast("Admin credentials matched. Opening Space Command for ${user.hotelName}...", ToastType.SUCCESS)
                     _currentUser.value = user
                     _currentUserRole.value = "Admin"
                     _currentScreen.value = Screen.ADMIN_DASHBOARD
+                } else if (user != null && user.passwordHash == passwordText) {
+                    showToast("This account is not registered as an Admin.", ToastType.ERROR)
                 } else {
                     showToast("Invalid admin credentials. Use configured Unique Username or admin/admin", ToastType.ERROR)
                 }
@@ -422,11 +542,30 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateOrderStatus(orderId: Int, newStatus: String) {
+    fun updateOrderStatus(orderId: Int, newStatus: String, adminOtpInput: String? = null) {
         viewModelScope.launch {
             val list = _orderHistory.value
             val found = list.find { it.id == orderId }
             if (found != null) {
+                val correctOtp = getDeliveryOtp(orderId)
+                
+                if (newStatus == "Delivered") {
+                    val userSubmittedOtp = _orderOtpsSubmitted.value[orderId]
+                    val isUserVerified = userSubmittedOtp == correctOtp
+                    val isAdminVerified = adminOtpInput?.trim() == correctOtp
+                    
+                    if (!isUserVerified && !isAdminVerified) {
+                        showToast("ACCESS DENIED: Secure Lock active. Matching Delivery OTP required!", ToastType.ERROR)
+                        return@launch
+                    }
+                    
+                    // Trigger Successful delivery local notification!
+                    sendSystemPushNotification(
+                        title = "DELIVERY SUCCESSFUL!",
+                        message = "Secure release confirmed for Order #$orderId! Cargo container unlocked."
+                    )
+                }
+
                 val updated = found.copy(status = newStatus)
                 appDao.insertOrder(updated)
                 showToast("Order #$orderId updated to: $newStatus", ToastType.SUCCESS)
@@ -466,6 +605,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             showToast("Please enter valid item details.", ToastType.ERROR)
             return
         }
+        val adminHotel = _currentUser.value?.hotelName ?: "SkyBite Central Hangar"
         viewModelScope.launch {
             val item = FoodItemEntity(
                 name = name,
@@ -477,10 +617,11 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                 isPopular = Random.nextBoolean(),
                 isAiRecommended = Random.nextBoolean(),
                 rating = 4.0 + Random.nextDouble() * 1.0,
-                deliveryTimeMin = 15 + Random.nextInt(20)
+                deliveryTimeMin = 15 + Random.nextInt(20),
+                hotelName = adminHotel
             )
             appDao.insertFoodItem(item)
-            showToast("Successfully deployed new food item!", ToastType.SUCCESS)
+            showToast("Successfully deployed new food item for $adminHotel!", ToastType.SUCCESS)
         }
     }
 
@@ -677,12 +818,22 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         _droneGps.value = DroneGpsService.trackDroneGps(0.0f, "Preparing order", orderId)
 
         trackingJob = viewModelScope.launch {
-            // Speeded up delivery for demo: increments progress to 100% over 50 seconds
-            val steps = 100
+            // Speeded up delivery for demo: increments progress to 75% then pauses, waiting for admin Delivered update
+            val steps = 75
             for (i in 1..steps) {
-                delay(500) // 50 seconds total
+                delay(500) // 37.5 seconds total simulation flight
                 _droneProgress.value = i / 100.0f
                 _deliverySecondsRemaining.value = 150 - (i * 1.5).toInt()
+
+                if (i == 60) {
+                    _droneStatus.value = "Arriving"
+                    sendSystemPushNotification(
+                        title = "DRONE 1 MINUTE AWAY!",
+                        message = "Your high-speed cargo drone for Order #$orderId is 1 minute away from landing. Clear the landing zone!"
+                    )
+                    _oneMinuteNotificationAlert.value = "Cargo Drone for Order #$orderId is 1 minute away from landing! Check telemetry."
+                    showToast("ALERT: Drone is 1-minute away from your doorstep!", ToastType.WARNING)
+                }
 
                 when (i) {
                     15 -> {
@@ -693,27 +844,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         _droneStatus.value = "In transit"
                         showToast("Drone is cruising in stratosphere at 60 km/h.", ToastType.INFO)
                     }
-                    75 -> {
+                    70 -> {
                         _droneStatus.value = "Arriving"
                         showToast("Drone is descending into your airspace!", ToastType.WARNING)
-                    }
-                    100 -> {
-                        _droneStatus.value = "Delivered"
-                        _deliverySecondsRemaining.value = 0
-                        showToast("Delivery dropped! Landing successful.", ToastType.SUCCESS)
-                        
-                        // Set the order as delivered in Room DB
-                        val active = _activeTrackedOrder.value
-                        if (active != null) {
-                            val updated = active.copy(status = "Delivered")
-                            appDao.insertOrder(updated)
-                        }
-
-                        // Trigger Review pop up for the first item in the order
-                        val firstFoodId = active?.itemsJson?.split(",")?.firstOrNull()?.split(":")?.firstOrNull()?.toIntOrNull()
-                        if (firstFoodId != null) {
-                            _showReviewFormForCompletedOrder.value = firstFoodId
-                        }
                     }
                 }
 
@@ -723,6 +856,17 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     orderId = orderId
                 )
             }
+            // Transition to persistent processing state until admin confirms landing/delivery
+            _droneStatus.value = "Awaiting Verification"
+            _deliverySecondsRemaining.value = 0
+            
+            // Trigger Arrived notifications
+            sendSystemPushNotification(
+                title = "DRONE ARRIVED!",
+                message = "Cargo Drone for Order #$orderId has landed at your doorstep. Enter secure lock OTP to claim cargo."
+            )
+            _adminNotificationAlert.value = "ORDER ARRIVED! Order #$orderId has arrived at customer doorstep. Secure Lock active. Awaiting OTP handshake."
+            showToast("Approaching delivery site. Awaiting user OTP secure handshake...", ToastType.WARNING)
         }
     }
 
